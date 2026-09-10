@@ -1,0 +1,91 @@
+{
+  "provider": "Codex CLI",
+  "model": "CLI default; no override",
+  "fixture": "tests/fixtures/thematic-repo",
+  "createdAt": "2026-09-10T18:14:41.622Z",
+  "status": "complete",
+  "themeCount": 2,
+  "flowCount": 5,
+  "uniqueGraphCount": 5,
+  "sourceFiles": [
+    {
+      "path": "README.md",
+      "sha256": "abc02c7caf8134d5944ee6a7ae2a60d6c9d56742d0b2bd4564ee881b226a6eec"
+    },
+    {
+      "path": "src/session.js",
+      "sha256": "7cf49d1e415ac23f1385584051504fc11aa402d66ba0772842b0ed335b0ee935"
+    },
+    {
+      "path": "src/users.js",
+      "sha256": "5fdf40806b496c5f5f9c79d57ee3423f647cbc35c1e0dc9675aa8ea8659aef41"
+    },
+    {
+      "path": "src/services.js",
+      "sha256": "7b9832fa24c31918f8fa12d383292541920fb875022dfa72a58f995c1774733f"
+    },
+    {
+      "path": "src/orders.js",
+      "sha256": "c4ab4796260d39ff36fd1605767bc32669f3dd96e2402a4bbfe83fec08618e5e"
+    },
+    {
+      "path": "docs/checkout.md",
+      "sha256": "9d92d7a55a9c1f97843f191d763912d5007932fb039779967de16350e5009cda"
+    }
+  ],
+  "themes": [
+    {
+      "title": "使用者登入：成功建立 session 與驗證失敗",
+      "flows": [
+        {
+          "title": "登入成功：使用者存在且密碼相符時建立 session",
+          "type": "sequence",
+          "nodes": 5,
+          "edges": 10,
+          "pumlSha256": "963f13cd8711c2296f2a1527c1f962ba94d12a40d7ad1605215715ca6eaac66e"
+        },
+        {
+          "title": "登入失敗：使用者不存在或密碼不符時提前返回",
+          "type": "sequence",
+          "nodes": 4,
+          "edges": 7,
+          "pumlSha256": "e0684c4cccf37594c2cfc19d8d04ff38e67eaa53070790b54f29023a1d905649"
+        }
+      ]
+    },
+    {
+      "title": "訂單結帳：付款成功與付款遭拒後釋放庫存",
+      "flows": [
+        {
+          "title": "結帳成功：保留庫存、付款接受、記錄已付款訂單",
+          "type": "sequence",
+          "nodes": 7,
+          "edges": 15,
+          "pumlSha256": "110d489da383aa25e8d54b6bd06aa587c29418d0f3bc4334b2729711be0c0f3a"
+        },
+        {
+          "title": "付款遭拒：釋放庫存後回傳失敗",
+          "type": "sequence",
+          "nodes": 4,
+          "edges": 10,
+          "pumlSha256": "5a3262207a48f5d7af8676a8ea6e4b01fc50d9e447130a618470c4822bf84093"
+        },
+        {
+          "title": "庫存不足：付款前立即回傳失敗",
+          "type": "sequence",
+          "nodes": 3,
+          "edges": 6,
+          "pumlSha256": "393016cf7d129ee3bd79703b5b135ef2fc01aa654a35364678257bba58840372"
+        }
+      ]
+    }
+  ],
+  "checks": {
+    "allPumlParsed": true,
+    "noLoginCheckoutThemeMix": true
+  },
+  "limitations": [
+    "Synthetic repository; no claim of accuracy on arbitrary production repos.",
+    "Source references and syntax validated; business semantics still require review."
+  ]
+}

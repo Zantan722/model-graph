@@ -5,42 +5,43 @@ const { spawn } = require('node:child_process');
 const { constants } = require('node:fs');
 const extensions = new Set('.ts .tsx .js .jsx .mjs .cjs .py .go .rs .java .kt .cs .cpp .c .h .hpp .rb .php .swift .vue .svelte .sql .graphql .proto .md .mdx .txt .rst .adoc .puml .plantuml .json .yaml .yml .toml .xml .html .css .scss .sh .tf'.split(' '));
 const excluded = new Set(['node_modules','vendor','dist','build','release','desktop-app','coverage','target','__pycache__','venv','package-lock.json','yarn.lock','pnpm-lock.yaml']);
-function allowed(name) { return !name.startsWith('.') && !excluded.has(name) && !/(secret|credential|password|token|private.?key|\.pem$|\.key$)/i.test(name); }
-async function scanFolder(root) {
-  const files=[]; let visited=0, skipped=0, limited=false;
-  async function walk(dir,depth) {
-    if(depth>16){limited=true;return;}
-    const handle=await fs.opendir(dir);
+function allowed(name) {
+ return (!name.startsWith('.')||name==='.github')&&!excluded.has(name)&&!/(?:\.(?:pem|key|p12|pfx)$)|(?:^(?:credentials?|secrets?|passwords?|tokens?|private[-_]?key)(?:[.-].*)?\.(?:json|ya?ml|toml|ini|txt)$)/i.test(name);
+}
+async function scanFolder(root,signal) {
+  const files=[];let skipped=0;
+  const directories=[root];
+  while(directories.length){
+    signal?.throwIfAborted();
+    const dir=directories.pop();let handle;
+    try{handle=await fs.opendir(dir);}catch(error){if(dir===root)throw error;skipped++;continue;}
     for await(const entry of handle){
-      if(++visited>10000||files.length>=1000){limited=true;break;}
+      signal?.throwIfAborted();
       if(!allowed(entry.name)||entry.isSymbolicLink()){skipped++;continue;}
       const full=path.join(dir,entry.name);
-      if(entry.isDirectory()) { try{await walk(full,depth+1);}catch{skipped++;} }
-      else if(entry.isFile()&&(extensions.has(path.extname(entry.name).toLowerCase())||entry.name==='Dockerfile')) {
-        const stat=await fs.stat(full);
-        if(stat.size>64000){skipped++;continue;}
-        files.push({path:path.relative(root,full),bytes:stat.size});
-      } else skipped++;
+      if(entry.isDirectory())directories.push(full);
+      else if(entry.isFile()&&(extensions.has(path.extname(entry.name).toLowerCase())||['Dockerfile','go.mod'].includes(entry.name))){
+        try{const stat=await fs.stat(full);files.push({path:path.relative(root,full),bytes:stat.size});}catch{skipped++;}
+      }else skipped++;
     }
   }
-  await walk(root,0);files.sort((a,b)=>a.path.localeCompare(b.path));
-  return {files,skipped,limited};
+  files.sort((a,b)=>a.path.localeCompare(b.path));return {files,skipped,limited:false};
 }
-async function readSelection(root, manifest, selection) {
-  if(!Array.isArray(selection)||selection.length>60||new Set(selection).size!==selection.length)throw new Error('最多選取 60 個不同檔案');
-  const valid=new Set(manifest.map(f=>f.path));let total=0;const result=[];
+async function readSelection(root, manifest, selection, signal) {
+  if(!Array.isArray(selection)||new Set(selection).size!==selection.length)throw new Error('來源檔案清單格式無效或包含重複項目');
+  const valid=new Set(manifest.map(f=>f.path));const result=[];
   for(const relative of selection){
+    signal?.throwIfAborted();
     if(typeof relative!=='string'||!valid.has(relative))throw new Error('檔案不在已選資料夾清單');
     const full=path.join(root,relative),real=await fs.realpath(full);
     if(real!==full||!real.startsWith(root+path.sep))throw new Error('檔案路徑已變更，請重新選取資料夾');
     const handle=await fs.open(full,constants.O_RDONLY|constants.O_NOFOLLOW);
     try {
-      const stat=await handle.stat();if(!stat.isFile()||stat.size>64000)throw new Error(`${relative} 超過 64 KB`);
-      const buffer=Buffer.alloc(64001);const {bytesRead}=await handle.read(buffer,0,buffer.length,0);
-      total+=bytesRead;if(bytesRead>64000||total>240000)throw new Error('選取內容上限 240 KB，每檔上限 64 KB');
-      const text=buffer.subarray(0,bytesRead).toString('utf8');
+      const stat=await handle.stat();if(!stat.isFile())throw new Error(`${relative} 不是一般檔案`);
+      const text=await handle.readFile({encoding:'utf8'});
+      signal?.throwIfAborted();
       if(text.includes('\0')||text.includes('\uFFFD'))throw new Error(`${relative} 不是 UTF-8 文字檔`);
-      if(/-----BEGIN [\w ]*PRIVATE KEY-----|\b(?:sk-[a-zA-Z0-9_-]{20,}|gh[pousr]_[a-zA-Z0-9]{20,}|AKIA[A-Z0-9]{16})/.test(text))throw new Error(`${relative} 可能含有憑證，請取消勾選`);
+      if(/-----BEGIN [\w ]*PRIVATE KEY-----|\b(?:sk-[a-zA-Z0-9_-]{20,}|gh[pousr]_[a-zA-Z0-9]{20,}|AKIA[A-Z0-9]{16})/.test(text))throw new Error(`${relative} 可能含有憑證，請改選不含此檔案的子資料夾`);
       result.push({path:relative,content:text});
     } finally {await handle.close();}
   }
@@ -83,10 +84,9 @@ module.exports={scanFolder,readSelection,discover,run,generationArgs,makePrompt}
 function parseFileSelection(output,manifest){
  let selected;
  try{selected=JSON.parse(output.trim().replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,''));}catch{throw new Error('模型未回傳有效的來源清單，請重試或縮小專案範圍');}
- if(!Array.isArray(selected)||!selected.length||selected.length>60||new Set(selected).size!==selected.length)throw new Error('模型選取的來源數量無效');
- const available=new Map(manifest.map(f=>[f.path,f.bytes]));let bytes=0;
- for(const name of selected){if(typeof name!=='string'||!available.has(name))throw new Error('模型選取了專案清單以外的檔案');bytes+=available.get(name);}
- if(bytes>240000)throw new Error('相關來源超過 240 KB，請改選子資料夾或縮小需求');
+ if(!Array.isArray(selected)||!selected.length||new Set(selected).size!==selected.length)throw new Error('模型選取的來源數量無效');
+ const available=new Map(manifest.map(f=>[f.path,f.bytes]));
+ for(const name of selected){if(typeof name!=='string'||!available.has(name))throw new Error('模型選取了專案清單以外的檔案');}
  return selected;
 }
 module.exports.parseFileSelection=parseFileSelection;

@@ -4,10 +4,16 @@ const { pathToFileURL } = require('node:url');
 const { resolveAsset } = require('./protocol.cjs');
 
 const smoke = process.argv.includes('--smoke-test');
+const reportSmoke = smoke && process.argv.includes('--smoke-report');
 if (smoke) {
   // Test runs never read or overwrite the user's saved diagrams.
   const { mkdtempSync } = require('node:fs');
   app.setPath('userData', mkdtempSync(path.join(require('node:os').tmpdir(), 'model-graph-smoke-')));
+}
+if(reportSmoke){
+  const {writeFileSync}=require('node:fs');
+  const story=(id,title)=>({id,title,summary:title,diagram:'sequence',level:'Container',trigger:'測試事件',uncertainty:'測試資料',steps:[{title:'輸入',description:'接收事件',evidence:[{path:'example.ts',startLine:1,endLine:1,excerpt:'input()'}]},{title:'結果',description:'回傳結果',evidence:[{path:'example.ts',startLine:2,endLine:2,excerpt:'return result'}]}],flowStatus:'ready',source:'@startuml\nparticipant Client\nparticipant API\nClient -> API : '+title+'\n@enduml'});
+  writeFileSync(path.join(app.getPath('userData'),'last-project-report.json'),JSON.stringify({version:1,id:'00000000-0000-4000-8000-000000000001',createdAt:new Date().toISOString(),project:'synthetic',title:'測試專案主題報告',summary:'兩個主題與四份獨立 Flow',status:'complete',coverage:{indexed:2,excluded:0,read:[],omitted:[]},themes:['登入','結帳'].map((title,i)=>({id:'t'+i,title,question:title+'問題',rationale:'不同業務能力',status:'complete',gaps:[],stories:[story('s'+i+'a',title+'成功'),story('s'+i+'b',title+'失敗')]}))}));
 }
 app.setName('Model Graph');
 protocol.registerSchemesAsPrivileged([
@@ -34,7 +40,24 @@ function createWindow() {
     if (smoke) { console.error(error); app.exit(1); }
     else dialog.showErrorBox('無法開啟 Model Graph', error.message);
   });
-  if (smoke) runSmoke(window);
+  if (reportSmoke) runReportSmoke(window);else if (smoke) runSmoke(window);
+}
+
+async function runReportSmoke(win){
+ const timeout=setTimeout(()=>{console.error('Report smoke timed out');app.exit(1);},20000);
+ win.webContents.once('did-finish-load',async()=>{
+  try{
+   const wait=()=>new Promise(r=>setTimeout(r,100));
+   let loaded=false;for(let i=0;i<100;i++){loaded=await win.webContents.executeJavaScript(`document.querySelectorAll('.report-workspace .theme-section').length===2 && document.querySelectorAll('.report-workspace .story-card').length===4`);if(loaded)break;await wait();}
+   if(!loaded)throw new Error('Report did not restore two themes and four flows');
+   await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.report-workspace button')).find(b=>b.textContent==='预览／載入 Flow'||b.textContent==='預覽／載入 Flow').click()`);await wait();
+   const preview=await win.webContents.executeJavaScript(`document.querySelector('#puml-source').value.includes('登入成功')`);if(!preview)throw new Error('Wrong flow selected');
+   await win.webContents.executeJavaScript(`document.querySelector('[aria-label="關閉 PUML 編輯器"]').click();Array.from(document.querySelectorAll('.report-workspace button')).find(b=>b.textContent==='帶回 Prompt 修改').click()`);await wait();
+   const refine=await win.webContents.executeJavaScript(`document.querySelector('[aria-label="分析模式"]').value==='diagram' && document.querySelector('[aria-label="圖表描述"]').value.includes('登入成功') && !document.querySelector('.workspace').classList.contains('show-report')`);
+   if(!refine)throw new Error('Flow refinement did not load into canvas and prompt');
+   console.log('Thematic report desktop test passed:',JSON.stringify({themes:2,flows:4,restored:true,preview,refine}));clearTimeout(timeout);app.exit(0);
+  }catch(error){console.error(error);clearTimeout(timeout);app.exit(1);}
+ });
 }
 
 async function runSmoke(win) {
@@ -83,9 +106,16 @@ async function runSmoke(win) {
       if(!providerSaved)throw new Error('Provider preference did not persist');
       const redoPreserved=await win.webContents.executeJavaScript(`!document.querySelector('[aria-label="重做"]').disabled`);
       if(!redoPreserved)throw new Error('Selecting a node cleared redo history');
+      const storyMode=await win.webContents.executeJavaScript(`document.querySelector('[aria-label="分析模式"]').querySelector('option[value="project"]')!==null`);
+      await win.webContents.executeJavaScript(`(()=>{const select=document.querySelector('[aria-label="Flow 關係"]');select.value=select.options[1].value;select.dispatchEvent(new Event('change',{bubbles:true}));const input=document.querySelector('[aria-label="流程名稱"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'Smoke flow');input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+      await settle();
+      await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='保存目前畫布').click()`);
+      await settle();
+      const flowSaved=await win.webContents.executeJavaScript(`JSON.parse(localStorage.getItem('modelgraph-flow-library-v1')).flows[0].title==='Smoke flow' && document.querySelectorAll('.edge.selected').length===1`);
+      if(!storyMode||!flowSaved)throw new Error('Story mode or flow library/navigation failed');
       const saved = await downloadResult;
       if (!saved) throw new Error('PUML download failed');
-      console.log('Desktop smoke test passed:', JSON.stringify({ ...result, pumlDownload: true, redoPreserved, aiBridge: true, unifiedComposer, providerSaved }));
+      console.log('Desktop smoke test passed:', JSON.stringify({ ...result, pumlDownload: true, redoPreserved, aiBridge: true, unifiedComposer, providerSaved, storyMode, flowSaved }));
       clearTimeout(timeout); app.exit(0);
     } catch (error) { console.error(error); clearTimeout(timeout); app.exit(1); }
   });

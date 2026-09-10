@@ -1,0 +1,8 @@
+const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');const crypto=require('node:crypto');
+const {importPuml}=require('../desktop-app/diagram-parser.cjs');const {validateReport}=require('../desktop/report-store.cjs');
+const report=validateReport(JSON.parse(fs.readFileSync('tests/fixtures/codex-live-report.json','utf8')));
+assert.equal(report.status,'complete');assert.ok(report.themes.length>=2);
+for(const source of report.coverage.read){const contents=fs.readFileSync(path.join('tests/fixtures/thematic-repo',source.path),'utf8');assert.equal(crypto.createHash('sha256').update(contents).digest('hex'),source.sha256);}
+const unique=new Set();
+for(const theme of report.themes){for(const story of theme.stories){assert.equal(story.flowStatus,'ready');if(theme.title.includes('登入'))assert.ok(!story.title.includes('結帳'));if(theme.title.includes('結帳'))assert.ok(!story.title.includes('登入'));const parsed=importPuml(story.source);assert.deepEqual(parsed.errors,[]);const names=new Map(parsed.graph.nodes.map(n=>[n.id,n.name]));unique.add(JSON.stringify({nodes:parsed.graph.nodes.map(n=>[n.kind,n.name]),edges:parsed.graph.edges.map(e=>[names.get(e.source),names.get(e.target),e.label])}));for(const step of story.steps)for(const e of step.evidence){const lines=fs.readFileSync(path.join('tests/fixtures/thematic-repo',e.path),'utf8').split('\n');assert.equal(e.excerpt,lines.slice(e.startLine-1,e.endLine).join('\n').slice(0,4000));}}}
+assert.ok(unique.size>=4);console.log(`Live Codex report replay passed: ${report.themes.length} themes, ${unique.size} distinct valid graphs, source hashes and evidence excerpts verified.`);

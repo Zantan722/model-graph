@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+const built=await build({entryPoints:['lib/flow-library.ts'],bundle:true,format:'esm',platform:'node',write:false});
+const {parseFlowLibrary,serializeFlowLibrary}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].text).toString('base64'));
+const flow={id:'one',title:'登入成功',project:'app',createdAt:'2026-09-11T00:00:00Z',source:'@startuml\nparticipant User\nparticipant API\nUser -> API : login\n@enduml'};
+assert.deepEqual(parseFlowLibrary(serializeFlowLibrary([flow])),[flow]);
+assert.equal(parseFlowLibrary(serializeFlowLibrary([flow,{...flow,id:'two',title:'登入失敗'}])).length,2);
+assert.throws(()=>serializeFlowLibrary([flow,flow]));
+assert.throws(()=>serializeFlowLibrary([{...flow,source:'@startuml\n!include /etc/passwd\n@enduml'}]));
+assert.throws(()=>serializeFlowLibrary(Array.from({length:21},(_,i)=>({...flow,id:String(i)}))));
+assert.throws(()=>parseFlowLibrary('{bad'));
+assert.throws(()=>parseFlowLibrary(' '.repeat(2000001)));
+console.log('Flow library independent snapshots, round-trip, schema and size validation passed.');

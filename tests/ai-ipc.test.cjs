@@ -16,6 +16,7 @@ Module._load=function(name,...args){
  if(name==='./ai.cjs')return {...actualAI,discover:async()=>'/fake/codex',generationArgs:()=>[],run:async(_exe,_args,_input,options)=>{
    inputs.push(_input);
    if(_input.startsWith('Select source files'))return '["README.md"]';
+   if(_input.startsWith('Analyze the supplied repository'))return JSON.stringify({stories:[{title:'資料庫查詢',summary:'API 存取資料庫',diagram:'sequence',level:'Container',trigger:'請求',uncertainty:'文件未說明實作',steps:[{title:'API',description:'接收請求',evidence:[{path:'README.md',startLine:1,endLine:1}]},{title:'DB',description:'呼叫資料庫',evidence:[{path:'README.md',startLine:1,endLine:1}]}]}]});
    if(!pending)return '@startuml\ncomponent "API" as api\n@enduml';
    return new Promise((resolve,reject)=>{resolveRun=resolve;options.signal.addEventListener('abort',()=>reject(new Error('cancelled')));});
  }};
@@ -39,6 +40,7 @@ const req={provider:'codex',custom:'',model:'',prompt:'API',current:'@startuml\n
  assert.match(inputs.at(-2),/Draw database calls/);
  assert.match(inputs.at(-1),/Project API calls the database/);
  assert.match(inputs.at(-1),/Draw database calls/);
+ await assert.rejects(invoke('generate',{...req,intent:'stories'}),/資料夾/);
  }finally{await fs.rm(root,{recursive:true,force:true});}
  pending=true;const first=invoke('generate',req);while(!resolveRun)await new Promise(r=>setTimeout(r,5));
  await assert.rejects(invoke('generate',req),/已有/);

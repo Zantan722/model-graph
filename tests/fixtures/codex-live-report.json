@@ -1,0 +1,483 @@
+{
+  "version": 1,
+  "id": "433a6711-c687-449c-ab06-0e3aed91df21",
+  "createdAt": "2026-09-10T18:14:41.622Z",
+  "project": "thematic-repo",
+  "title": "Shop example：使用者登入與訂單結帳循序圖調查",
+  "summary": "依 README 初步辨識使用者登入與訂單結帳兩項能力，分為兩個主題調查。後續須讀取實際程式碼，確認參與者、呼叫順序與分支條件；每個主題至少區分成功與失敗 Story，各產生獨立循序圖。文件僅作調查線索，不補入程式碼未實作的功能；若程式碼不足以支持指定 Story，須明確指出。",
+  "status": "complete",
+  "themes": [
+    {
+      "id": "theme-1",
+      "title": "使用者登入：成功建立 session 與驗證失敗",
+      "question": "追查 src/session.js、src/users.js 及相關服務：登入如何接收資料、查找使用者、驗證密碼，以及在何種條件下回傳 session？實際失敗分支如何終止或回應？依程式碼分別建立登入成功與登入失敗 Story 的獨立循序圖。",
+      "rationale": "登入涉及使用者身分驗證與 session 回傳，具有獨立於結帳的參與者、成功條件與失敗處理；README 提及僅驗證通過才回傳 session，須確認實作細節。",
+      "paths": [
+        "src/session.js",
+        "src/users.js",
+        "src/services.js",
+        "README.md"
+      ],
+      "status": "complete",
+      "stories": [
+        {
+          "id": "theme-1-story-1",
+          "title": "登入成功：使用者存在且密碼相符時建立 session",
+          "summary": "login(email, password) 接收函式參數，依 email 查找使用者並驗證密碼；驗證通過後呼叫 issueSession，回傳包含 session 的成功物件。",
+          "diagram": "sequence",
+          "level": "Code",
+          "trigger": "呼叫 login('demo@example.test', 'example-only')。",
+          "uncertainty": "觸發參數是依固定使用者資料設定的情境，未提供實際呼叫端或測試執行證據。程式碼只證明函式參數與物件回傳，無法確認 HTTP 請求解析或回應傳送。issueSession 僅建立物件，未見持久化、token、cookie 或到期處理；expiresIn 的單位未明示。登入直接匯入 './users.js'，未見 src/services.js 參與。",
+          "steps": [
+            {
+              "title": "接收登入資料並查找使用者",
+              "description": "login 接收 email 與 password，呼叫 findUser(email)。findUser 以嚴格相等比較 email，從 users 陣列取得 id 為 'u1' 的使用者。",
+              "evidence": [
+                {
+                  "path": "src/session.js",
+                  "startLine": 2,
+                  "endLine": 3,
+                  "excerpt": "export function login(email, password) {\n  const user = findUser(email);"
+                },
+                {
+                  "path": "src/users.js",
+                  "startLine": 1,
+                  "endLine": 2,
+                  "excerpt": "const users = [{ id: 'u1', email: 'demo@example.test', password: 'example-only' }];\nexport function findUser(email) { return users.find(user => user.email === email); }"
+                }
+              ]
+            },
+            {
+              "title": "驗證密碼並通過失敗條件檢查",
+              "description": "user 存在，因此執行 matchesPassword(user, password)。user.password === password 回傳 true，login 不進入提前回傳 401 的分支。",
+              "evidence": [
+                {
+                  "path": "src/session.js",
+                  "startLine": 4,
+                  "endLine": 4,
+                  "excerpt": "  if (!user || !matchesPassword(user, password)) return { status: 401, error: 'invalid_credentials' };"
+                },
+                {
+                  "path": "src/users.js",
+                  "startLine": 3,
+                  "endLine": 3,
+                  "excerpt": "export function matchesPassword(user, password) { return user.password === password; }"
+                }
+              ]
+            },
+            {
+              "title": "建立 session 物件",
+              "description": "login 呼叫 issueSession(user.id)，傳入 'u1'；issueSession 回傳 { userId: 'u1', expiresIn: 3600 }。",
+              "evidence": [
+                {
+                  "path": "src/session.js",
+                  "startLine": 5,
+                  "endLine": 5,
+                  "excerpt": "  return { status: 200, session: issueSession(user.id) };"
+                },
+                {
+                  "path": "src/users.js",
+                  "startLine": 4,
+                  "endLine": 4,
+                  "excerpt": "export function issueSession(id) { return { userId: id, expiresIn: 3600 }; }"
+                }
+              ]
+            },
+            {
+              "title": "回傳成功結果",
+              "description": "issueSession 回傳後，login 將 { status: 200, session: { userId: 'u1', expiresIn: 3600 } } 同步回傳呼叫端並結束。",
+              "evidence": [
+                {
+                  "path": "src/session.js",
+                  "startLine": 5,
+                  "endLine": 6,
+                  "excerpt": "  return { status: 200, session: issueSession(user.id) };\n}"
+                },
+                {
+                  "path": "src/users.js",
+                  "startLine": 4,
+                  "endLine": 4,
+                  "excerpt": "export function issueSession(id) { return { userId: id, expiresIn: 3600 }; }"
+                }
+              ]
+            }
+          ],
+          "flowStatus": "ready",
+          "source": "@startuml\n' @modelgraph {\"version\":1,\"diagram\":\"sequence\",\"level\":\"Code\"}\n\nactor \"呼叫端（假設）\" as Caller\nparticipant \"登入函式 login\" as Login\nparticipant \"使用者查找 findUser\" as FindUser\nparticipant \"密碼驗證 matchesPassword\" as MatchesPassword\nparticipant \"建立工作階段 issueSession\" as IssueSession\n\nnote right of Caller : 假設：呼叫 login('demo@example.test', 'example-only')；src/users.js:1 提供固定資料，未提供實際呼叫端或測試執行證據。\nnote right of Login : src/session.js:1-6；直接匯入 './users.js'，接收函式參數並同步回傳物件。\nnote right of FindUser : src/users.js:1-2；users.find 以 user.email === email 查找使用者。\nnote right of MatchesPassword : src/users.js:3；以 user.password === password 驗證。\nnote right of IssueSession : src/users.js:4；僅建立 { userId: id, expiresIn: 3600 }；expiresIn 單位未明示。\n\nCaller -> Login : 呼叫 login(email, password)\nLogin -> FindUser : 查找 findUser(email)\nFindUser --> Login : 回傳 user 或 undefined\n\nLogin --> Caller : 【分支一：!user】回傳 { status: 401, error: 'invalid_credentials' }\nnote right of Login : src/session.js:4；分支一立即結束，短路運算不呼叫 matchesPassword。\n\nLogin -> MatchesPassword : 【user 存在】驗證 matchesPassword(user, password)\nMatchesPassword --> Login : 回傳密碼嚴格相等的布林結果\n\nLogin --> Caller : 【分支二：驗證為 false】回傳 { status: 401, error: 'invalid_credentials' }\nnote right of Login : src/session.js:4-5；分支二立即結束；兩種失敗結果皆不呼叫 issueSession。圖中各分支互斥。\n\nLogin -> IssueSession : 【分支三：驗證為 true】建立 issueSession(user.id)\nIssueSession --> Login : 回傳 { userId: 'u1', expiresIn: 3600 }\nLogin --> Caller : 【成功結果】回傳 { status: 200, session: { userId: 'u1', expiresIn: 3600 } }\n\nnote right of Login : src/session.js:2-5、src/users.js:1-4；假設的觸發參數符合固定使用者，走成功分支；失敗箭頭表示同一 login 的條件分支。\nnote right of IssueSession : src/users.js:4；證據不足以確認持久化、token、cookie 或到期處理。\nnote right of Caller : src/session.js:2-6；僅證明函式呼叫與物件回傳，無法確認 HTTP 請求解析或回應傳送。\n@enduml",
+          "warnings": []
+        },
+        {
+          "id": "theme-1-story-2",
+          "title": "登入失敗：使用者不存在或密碼不符時提前返回",
+          "summary": "登入有兩條互斥的驗證失敗路徑：查無使用者時跳過密碼驗證；使用者存在但密碼不符時驗證失敗。兩者皆回傳 invalid_credentials 並終止，不建立 session。",
+          "diagram": "sequence",
+          "level": "Code",
+          "trigger": "呼叫 login(email, password)，email 查無使用者，或 email 符合但 password 與儲存值不相等。",
+          "uncertainty": "兩條失敗路徑由 || 的短路語意與提前 return 證明，不表示分支 A 後續會執行分支 B。status: 401 僅是回傳物件欄位，未提供 HTTP 回應或呼叫端處理實作。所提供登入程式碼未見重試、額外輸入驗證或例外捕捉；沒有測試執行證據。",
+          "steps": [
+            {
+              "title": "接收登入資料並查找使用者",
+              "description": "login 接收 email 與 password，呼叫 findUser(email)，透過 users.find 與 user.email === email 查找使用者。",
+              "evidence": [
+                {
+                  "path": "src/session.js",
+                  "startLine": 2,
+                  "endLine": 3,
+                  "excerpt": "export function login(email, password) {\n  const user = findUser(email);"
+                },
+                {
+                  "path": "src/users.js",
+                  "startLine": 1,
+                  "endLine": 2,
+                  "excerpt": "const users = [{ id: 'u1', email: 'demo@example.test', password: 'example-only' }];\nexport function findUser(email) { return users.find(user => user.email === email); }"
+                }
+              ]
+            },
+            {
+              "title": "替代分支 A：查無使用者",
+              "description": "findUser 回傳 undefined，使 !user 為 true。|| 短路而跳過 matchesPassword，login 立即回傳 { status: 401, error: 'invalid_credentials' } 並結束。",
+              "evidence": [
+                {
+                  "path": "src/users.js",
+                  "startLine": 2,
+                  "endLine": 2,
+                  "excerpt": "export function findUser(email) { return users.find(user => user.email === email); }"
+                },
+                {
+                  "path": "src/session.js",
+                  "startLine": 3,
+                  "endLine": 4,
+                  "excerpt": "  const user = findUser(email);\n  if (!user || !matchesPassword(user, password)) return { status: 401, error: 'invalid_credentials' };"
+                }
+              ]
+            },
+            {
+              "title": "替代分支 B：使用者存在但密碼不符",
+              "description": "僅在 user 存在時呼叫 matchesPassword(user, password)。user.password === password 回傳 false，使失敗條件成立；login 立即回傳 { status: 401, error: 'invalid_credentials' } 並結束。此分支與分支 A 互斥。",
+              "evidence": [
+                {
+                  "path": "src/session.js",
+                  "startLine": 4,
+                  "endLine": 4,
+                  "excerpt": "  if (!user || !matchesPassword(user, password)) return { status: 401, error: 'invalid_credentials' };"
+                },
+                {
+                  "path": "src/users.js",
+                  "startLine": 3,
+                  "endLine": 3,
+                  "excerpt": "export function matchesPassword(user, password) { return user.password === password; }"
+                }
+              ]
+            },
+            {
+              "title": "確認失敗路徑不建立 session",
+              "description": "任一失敗分支的 return 都直接終止 login，因此不執行下一行 issueSession(user.id)，也不回傳 status: 200。循序圖應以 alt 呈現兩條替代路徑；此步是共同終止結果，沒有額外函式呼叫。",
+              "evidence": [
+                {
+                  "path": "src/session.js",
+                  "startLine": 4,
+                  "endLine": 6,
+                  "excerpt": "  if (!user || !matchesPassword(user, password)) return { status: 401, error: 'invalid_credentials' };\n  return { status: 200, session: issueSession(user.id) };\n}"
+                }
+              ]
+            }
+          ],
+          "flowStatus": "ready",
+          "source": "@startuml\n' @modelgraph {\"version\":1,\"diagram\":\"sequence\",\"level\":\"Code\"}\n\nparticipant \"呼叫端（假設的互動邊界）\" as Caller\nparticipant \"登入入口 login\" as Login\nparticipant \"查找使用者 findUser\" as FindUser\nparticipant \"驗證密碼 matchesPassword\" as MatchesPassword\n\nnote right of Caller : src/session.js:2：假設以呼叫端表示函式輸入與回傳邊界；未提供呼叫端實作。\nnote right of Login : src/session.js:2-6：本圖僅呈現 Story theme-1-story-2 的兩條登入失敗路徑。\nnote right of FindUser : src/users.js:1-2：users.find 以 user.email === email 查找。\nnote right of MatchesPassword : src/users.js:3：以 user.password === password 判定是否相符。\n\nCaller -> Login : 呼叫 login(email, password)\nLogin -> FindUser : 查找 findUser(email)\nFindUser --> Login : 回傳 user；查無則為 undefined\n\nnote right of Login : src/session.js:4：以下 A、B 為互斥替代路徑；箭頭排列不表示 A 結束後執行 B。\nLogin --> Caller : [A：!user] 提前回傳 { status: 401, error: 'invalid_credentials' }\nnote right of Login : src/session.js:4-5：A 因 || 短路跳過 matchesPassword；login 終止，不呼叫 issueSession。\n\nLogin -> MatchesPassword : [B：user 存在] 驗證 matchesPassword(user, password)\nMatchesPassword --> Login : [B：密碼不符] 回傳 false\nLogin --> Caller : [B：!matchesPassword] 提前回傳 { status: 401, error: 'invalid_credentials' }\nnote right of Login : src/session.js:4-5：B 終止，不呼叫 issueSession；兩條失敗路徑皆不建立 session，也不回傳 status: 200。\nnote right of Login : src/session.js:5；src/users.js:4：成功驗證才呼叫 issueSession(user.id)，回傳含 userId、expiresIn: 3600 的 session；成功路徑不屬於本 Story。\nnote right of Login : src/session.js:4：401 僅為回傳物件欄位；HTTP 回應與呼叫端處理證據不足。提供原始碼未見重試、額外輸入驗證或例外捕捉，亦無測試執行證據。\n@enduml",
+          "warnings": []
+        }
+      ],
+      "gaps": [
+        "提供的完整索引未包含登入呼叫端、HTTP 路由或請求解析實作，因此無法追溯 email/password 的外部來源或確認實際 HTTP 回應傳送方式。",
+        "提供的索引中沒有測試檔案；成功與失敗流程依實作確認，沒有測試執行證據。"
+      ]
+    },
+    {
+      "id": "theme-2",
+      "title": "訂單結帳：付款成功與付款遭拒後釋放庫存",
+      "question": "追查 src/orders.js 與 src/services.js：庫存保留、付款扣款與已付款訂單記錄的實際呼叫順序為何？付款遭拒時是否及如何釋放庫存、回傳失敗？對照 docs/checkout.md，以程式碼確認結帳成功與付款失敗 Story，分別產生獨立循序圖；其他失敗分支僅在實作存在時納入。",
+      "rationale": "結帳串接庫存、付款與訂單記錄，付款失敗涉及庫存釋放，與登入的驗證流程有不同的狀態變更與失敗處理，應獨立調查。",
+      "paths": [
+        "src/orders.js",
+        "src/services.js",
+        "docs/checkout.md",
+        "README.md"
+      ],
+      "status": "complete",
+      "stories": [
+        {
+          "id": "theme-2-story-1",
+          "title": "結帳成功：保留庫存、付款接受、記錄已付款訂單",
+          "summary": "實際順序為 reserveStock → await charge → saveOrder → 回傳成功，符合 docs/checkout.md。付款由確定性 stub 判定，成功後保留庫存的扣減。",
+          "diagram": "sequence",
+          "level": "Component",
+          "trigger": "呼叫 checkout(order)，order.item 有可用庫存，且 order.total 為一般數值並滿足 <= 100。",
+          "uncertainty": "呼叫順序由函式內的陳述式與 await 支持。status 是回傳物件欄位，未提供 HTTP 傳送層；inventory 與 orders 為記憶體資料。數值條件假設輸入為一般數值，程式未實作型別驗證；未執行測試。",
+          "steps": [
+            {
+              "title": "同步保留一件庫存",
+              "description": "checkout 呼叫 reserveStock(order.item)。reserveStock 讀取 inventory，庫存非零時扣減 1 並回傳 true，才繼續付款。",
+              "evidence": [
+                {
+                  "path": "src/orders.js",
+                  "startLine": 2,
+                  "endLine": 4,
+                  "excerpt": "export async function checkout(order) {\n  if (!reserveStock(order.item)) return { status: 409, error: 'out_of_stock' };\n  const payment = await charge(order.total);"
+                },
+                {
+                  "path": "src/services.js",
+                  "startLine": 3,
+                  "endLine": 7,
+                  "excerpt": "export function reserveStock(item) {\n  const count = inventory.get(item) || 0;\n  if (!count) return false;\n  inventory.set(item, count - 1); return true;\n}"
+                }
+              ]
+            },
+            {
+              "title": "等待付款接受結果",
+              "description": "checkout 呼叫並 await charge(order.total)。charge 以 amount <= 100 產生 accepted；本情境為 true，因此略過付款遭拒分支。文件確認此服務為確定性 stub，沒有真實金流扣款。",
+              "evidence": [
+                {
+                  "path": "src/orders.js",
+                  "startLine": 4,
+                  "endLine": 8,
+                  "excerpt": "  const payment = await charge(order.total);\n  if (!payment.accepted) {\n    releaseStock(order.item);\n    return { status: 402, error: 'payment_declined' };\n  }"
+                },
+                {
+                  "path": "src/services.js",
+                  "startLine": 9,
+                  "endLine": 9,
+                  "excerpt": "export async function charge(amount) { return { accepted: amount <= 100 }; }"
+                },
+                {
+                  "path": "docs/checkout.md",
+                  "startLine": 2,
+                  "endLine": 4,
+                  "excerpt": "Reserve before charging. A declined payment restores reserved stock.\nOnly a successful charge creates a paid order.\nThe payment service in this example is a deterministic stub, not a real gateway."
+                }
+              ]
+            },
+            {
+              "title": "同步記錄已付款訂單",
+              "description": "checkout 呼叫 saveOrder({ ...order, state: 'paid' })，將 state 設為 'paid' 並覆蓋輸入的同名欄位；saveOrder 同步將訂單加入 orders 陣列。",
+              "evidence": [
+                {
+                  "path": "src/orders.js",
+                  "startLine": 9,
+                  "endLine": 9,
+                  "excerpt": "  saveOrder({ ...order, state: 'paid' });"
+                },
+                {
+                  "path": "src/services.js",
+                  "startLine": 2,
+                  "endLine": 2,
+                  "excerpt": "export const orders = [];"
+                },
+                {
+                  "path": "src/services.js",
+                  "startLine": 10,
+                  "endLine": 10,
+                  "excerpt": "export function saveOrder(order) { orders.push(order); }"
+                }
+              ]
+            },
+            {
+              "title": "回傳成功結果",
+              "description": "saveOrder 完成後，checkout 回傳 { status: 201, state: 'paid' }。成功路徑不執行 releaseStock，因此本次保留造成的庫存扣減維持不變。",
+              "evidence": [
+                {
+                  "path": "src/orders.js",
+                  "startLine": 5,
+                  "endLine": 10,
+                  "excerpt": "  if (!payment.accepted) {\n    releaseStock(order.item);\n    return { status: 402, error: 'payment_declined' };\n  }\n  saveOrder({ ...order, state: 'paid' });\n  return { status: 201, state: 'paid' };"
+                },
+                {
+                  "path": "docs/checkout.md",
+                  "startLine": 2,
+                  "endLine": 3,
+                  "excerpt": "Reserve before charging. A declined payment restores reserved stock.\nOnly a successful charge creates a paid order."
+                }
+              ]
+            }
+          ],
+          "flowStatus": "ready",
+          "source": "@startuml\n' @modelgraph {\"version\":1,\"diagram\":\"sequence\",\"level\":\"Component\"}\n\nactor \"checkout 呼叫端\" as Caller\nparticipant \"訂單結帳 checkout\" as Checkout\nparticipant \"庫存服務 reserveStock / releaseStock\" as Stock\nparticipant \"付款 stub charge\" as Payment\nparticipant \"訂單儲存 saveOrder\" as Store\ndatabase \"記憶體庫存 inventory\" as Inventory\ndatabase \"記憶體訂單 orders\" as Orders\n\nnote right of Caller : 假設：order.total 為一般數值；本 Story 前提為庫存可用且 total <= 100。\nnote right of Checkout : src/orders.js:2-10；下列條件標籤表示互斥分支，return 後結束該次呼叫；status 僅為回傳欄位，無 HTTP 傳送層證據。\nnote right of Stock : src/services.js:3-8；同步保留或釋放一件庫存。\nnote right of Payment : src/services.js:9；docs/checkout.md:4；確定性 stub，非真實金流。\nnote right of Store : src/services.js:10；同步加入訂單。\nnote right of Inventory : src/services.js:1；記憶體 Map，初始 book 庫存為 2。\nnote right of Orders : src/services.js:2；記憶體陣列，初始為空。\n\nCaller -> Checkout : 呼叫 checkout(order)\nCheckout -> Stock : 保留一件 reserveStock(order.item)\nStock -> Inventory : 讀取 inventory.get(item)，缺值視為 0\nInventory --> Stock : 取得 count\nStock -> Inventory : [count 非零] 設定 count - 1\nStock --> Checkout : 回傳 count 非零時 true，否則 false\nCheckout --> Caller : [保留失敗；本 Story 前提外] return { status: 409, error: 'out_of_stock' }\nnote right of Checkout : src/orders.js:3；src/services.js:4-6；保留失敗即結束，不呼叫 charge。\n\nCheckout -> Payment : [保留成功] 呼叫並 await charge(order.total)\nPayment --> Checkout : 回傳 { accepted: amount <= 100 }\nnote right of Payment : src/orders.js:4；src/services.js:9；checkout 等待付款結果才繼續。\n\nCheckout -> Stock : [!payment.accepted；付款遭拒分支] releaseStock(order.item)\nStock -> Inventory : [付款遭拒] 將目前庫存加 1\nCheckout --> Caller : [付款遭拒] return { status: 402, error: 'payment_declined' }\nnote right of Stock : src/orders.js:5-7；src/services.js:8；docs/checkout.md:2；恢復保留的庫存，該分支不建立訂單。\n\nCheckout -> Store : [payment.accepted；本 Story 成功分支] saveOrder({ ...order, state: 'paid' })\nStore -> Orders : [付款接受] orders.push(order)\nnote right of Store : src/orders.js:9；src/services.js:10；state: 'paid' 覆蓋輸入的同名欄位。\nCheckout --> Caller : [saveOrder 完成] return { status: 201, state: 'paid' }\nnote right of Checkout : src/orders.js:5-10；docs/checkout.md:2-3；成功分支不呼叫 releaseStock，庫存扣減維持；未執行測試。\n@enduml",
+          "warnings": []
+        },
+        {
+          "id": "theme-2-story-2",
+          "title": "付款遭拒：釋放庫存後回傳失敗",
+          "summary": "庫存保留成功後，charge 回傳 accepted: false；checkout 先同步增加一件庫存，再回傳 payment_declined，且不新增已付款訂單，符合文件契約。",
+          "diagram": "sequence",
+          "level": "Component",
+          "trigger": "呼叫 checkout(order)，order.item 有可用庫存，且 order.total 為一般數值並滿足 > 100。",
+          "uncertainty": "此情境是 accepted: false 的業務拒絕，不是 Promise rejection。checkout 未實作 try/catch 或 finally，不能據此宣稱付款拋錯也會釋放庫存。提供的程式未實作重試或背景補償；未執行測試。",
+          "steps": [
+            {
+              "title": "先保留一件庫存",
+              "description": "checkout 同步呼叫 reserveStock(order.item)，將該品項庫存減 1；回傳 true 後才呼叫 charge。",
+              "evidence": [
+                {
+                  "path": "src/orders.js",
+                  "startLine": 2,
+                  "endLine": 4,
+                  "excerpt": "export async function checkout(order) {\n  if (!reserveStock(order.item)) return { status: 409, error: 'out_of_stock' };\n  const payment = await charge(order.total);"
+                },
+                {
+                  "path": "src/services.js",
+                  "startLine": 3,
+                  "endLine": 7,
+                  "excerpt": "export function reserveStock(item) {\n  const count = inventory.get(item) || 0;\n  if (!count) return false;\n  inventory.set(item, count - 1); return true;\n}"
+                }
+              ]
+            },
+            {
+              "title": "等待付款遭拒結果",
+              "description": "checkout 等待 charge(order.total)。amount > 100 時，stub 回傳 { accepted: false }，使 checkout 進入 !payment.accepted 分支。",
+              "evidence": [
+                {
+                  "path": "src/orders.js",
+                  "startLine": 4,
+                  "endLine": 5,
+                  "excerpt": "  const payment = await charge(order.total);\n  if (!payment.accepted) {"
+                },
+                {
+                  "path": "src/services.js",
+                  "startLine": 9,
+                  "endLine": 9,
+                  "excerpt": "export async function charge(amount) { return { accepted: amount <= 100 }; }"
+                }
+              ]
+            },
+            {
+              "title": "同步釋放已保留庫存",
+              "description": "checkout 呼叫 releaseStock(order.item)，將該品項當下庫存加 1，以補回本次保留的一件庫存；此呼叫在失敗回傳之前完成。",
+              "evidence": [
+                {
+                  "path": "src/orders.js",
+                  "startLine": 5,
+                  "endLine": 7,
+                  "excerpt": "  if (!payment.accepted) {\n    releaseStock(order.item);\n    return { status: 402, error: 'payment_declined' };"
+                },
+                {
+                  "path": "src/services.js",
+                  "startLine": 8,
+                  "endLine": 8,
+                  "excerpt": "export function releaseStock(item) { inventory.set(item, (inventory.get(item) || 0) + 1); }"
+                },
+                {
+                  "path": "docs/checkout.md",
+                  "startLine": 2,
+                  "endLine": 2,
+                  "excerpt": "Reserve before charging. A declined payment restores reserved stock."
+                }
+              ]
+            },
+            {
+              "title": "回傳付款失敗並終止",
+              "description": "checkout 回傳 { status: 402, error: 'payment_declined' }，提前結束，不會執行 saveOrder，因此本次結帳不會新增 orders 記錄。",
+              "evidence": [
+                {
+                  "path": "src/orders.js",
+                  "startLine": 7,
+                  "endLine": 10,
+                  "excerpt": "    return { status: 402, error: 'payment_declined' };\n  }\n  saveOrder({ ...order, state: 'paid' });\n  return { status: 201, state: 'paid' };"
+                },
+                {
+                  "path": "src/services.js",
+                  "startLine": 10,
+                  "endLine": 10,
+                  "excerpt": "export function saveOrder(order) { orders.push(order); }"
+                },
+                {
+                  "path": "docs/checkout.md",
+                  "startLine": 3,
+                  "endLine": 3,
+                  "excerpt": "Only a successful charge creates a paid order."
+                }
+              ]
+            }
+          ],
+          "flowStatus": "ready",
+          "source": "@startuml\n' @modelgraph {\"version\":1,\"diagram\":\"sequence\",\"level\":\"Component\"}\n\nparticipant \"呼叫端（假設：觸發 checkout）\" as Caller\nparticipant \"訂單結帳 checkout\" as Checkout\nparticipant \"庫存服務 reserveStock / releaseStock\" as Stock\nparticipant \"付款服務 charge（確定性 stub）\" as Payment\n\nnote right of Caller : 情境前提：order.item 有庫存；order.total 為一般數值且 > 100；呼叫端實作未提供。\nnote right of Checkout : src/orders.js:2-10；本圖僅呈現付款遭拒 Story。\nnote right of Stock : src/services.js:3-8；docs/checkout.md:2\nnote right of Payment : src/services.js:9；docs/checkout.md:4\n\nCaller -> Checkout : 呼叫 checkout(order)\nCheckout -> Stock : 同步保留 reserveStock(order.item)\nStock -> Stock : [count > 0] inventory.set(item, count - 1)\nStock --> Checkout : 回傳 true，完成保留\nnote right of Stock : src/services.js:4-6；本情境不走無庫存分支。\nCheckout -> Payment : 保留成功後，等待 charge(order.total)\nPayment --> Checkout : [amount > 100] 回傳 { accepted: false }\nnote right of Payment : src/orders.js:3-5；src/services.js:9；此為業務拒絕，非 Promise rejection。\nCheckout -> Stock : [!payment.accepted] 同步呼叫 releaseStock(order.item)\nStock -> Stock : inventory.set(item, (inventory.get(item) || 0) + 1)\nStock --> Checkout : 同步釋放完成，補回一件庫存\nnote right of Stock : src/orders.js:5-7；src/services.js:8；釋放完成後才回傳失敗。\nCheckout --> Caller : 回傳 { status: 402, error: 'payment_declined' }\nnote right of Checkout : src/orders.js:7-10；src/services.js:10；docs/checkout.md:3；提前結束，不執行 saveOrder，不新增已付款訂單。\nnote right of Checkout : src/orders.js:2-11；未實作 try/catch、finally、重試或背景補償；無證據支持付款拋錯也會釋放庫存；未執行測試。\n@enduml",
+          "warnings": []
+        },
+        {
+          "id": "theme-2-story-3",
+          "title": "庫存不足：付款前立即回傳失敗",
+          "summary": "零庫存或未知品項使 reserveStock 回傳 false，checkout 立即回傳 out_of_stock，不執行付款、庫存釋放或訂單記錄。此為程式明確實作的另一個結帳失敗分支。",
+          "diagram": "sequence",
+          "level": "Component",
+          "trigger": "呼叫 checkout(order)，order.item 的庫存為 0，或 inventory 中不存在該品項。",
+          "uncertainty": "缺貨分支由程式碼直接支持，docs/checkout.md 未明述其回傳契約。未知品項與零庫存共用同一分支，未提供獨立的品項驗證或補貨實作；未執行測試。",
+          "steps": [
+            {
+              "title": "保留庫存失敗",
+              "description": "checkout 呼叫 reserveStock(order.item)。reserveStock 以 inventory.get(item) || 0 取得數量，未知品項視為 0；if (!count) 直接回傳 false，不執行庫存扣減。",
+              "evidence": [
+                {
+                  "path": "src/orders.js",
+                  "startLine": 2,
+                  "endLine": 3,
+                  "excerpt": "export async function checkout(order) {\n  if (!reserveStock(order.item)) return { status: 409, error: 'out_of_stock' };"
+                },
+                {
+                  "path": "src/services.js",
+                  "startLine": 3,
+                  "endLine": 7,
+                  "excerpt": "export function reserveStock(item) {\n  const count = inventory.get(item) || 0;\n  if (!count) return false;\n  inventory.set(item, count - 1); return true;\n}"
+                }
+              ]
+            },
+            {
+              "title": "回傳缺貨並終止結帳",
+              "description": "checkout 收到 false 後立即回傳 { status: 409, error: 'out_of_stock' }，不會到達 charge、releaseStock 或 saveOrder。",
+              "evidence": [
+                {
+                  "path": "src/orders.js",
+                  "startLine": 3,
+                  "endLine": 10,
+                  "excerpt": "  if (!reserveStock(order.item)) return { status: 409, error: 'out_of_stock' };\n  const payment = await charge(order.total);\n  if (!payment.accepted) {\n    releaseStock(order.item);\n    return { status: 402, error: 'payment_declined' };\n  }\n  saveOrder({ ...order, state: 'paid' });\n  return { status: 201, state: 'paid' };"
+                }
+              ]
+            }
+          ],
+          "flowStatus": "ready",
+          "source": "@startuml\n' @modelgraph {\"version\":1,\"diagram\":\"sequence\",\"level\":\"Component\"}\n\nactor \"呼叫端（假設）\" as Caller\nparticipant \"結帳 checkout\" as Checkout\nparticipant \"庫存保留 reserveStock\" as ReserveStock\n\nnote right of Caller : 假設：以呼叫端表示 checkout(order) 的觸發者；來源未提供具體呼叫端實作。\nnote right of Checkout : src/orders.js:2-3：本圖僅呈現缺貨 Story。\nnote right of ReserveStock : src/services.js:3-7：取得庫存並判斷是否可保留。\n\nCaller -> Checkout : 呼叫 checkout(order)\nCheckout -> ReserveStock : 呼叫 reserveStock(order.item)\nReserveStock -> ReserveStock : 取得 count = inventory.get(item) || 0\nnote right of ReserveStock : src/services.js:4：未知品項視為 0；零庫存與未知品項共用分支。\nReserveStock -> ReserveStock : 缺貨分支：if (!count) 成立\nReserveStock --> Checkout : 回傳 false，不扣減庫存\nnote right of ReserveStock : src/services.js:5-6：直接回傳 false，不執行 inventory.set。\nCheckout --> Caller : 立即回傳 { status: 409, error: 'out_of_stock' }\nnote right of Checkout : src/orders.js:3-10：結帳終止，不執行 charge、releaseStock 或 saveOrder。\nnote right of Checkout : 證據限制：初始 inventory 僅含 book 庫存 2（src/services.js:1）；本圖以零庫存或未知品項為觸發條件，未執行測試。\n@enduml",
+          "warnings": []
+        }
+      ],
+      "gaps": []
+    }
+  ],
+  "coverage": {
+    "indexed": 6,
+    "excluded": 0,
+    "read": [
+      {
+        "path": "README.md",
+        "sha256": "abc02c7caf8134d5944ee6a7ae2a60d6c9d56742d0b2bd4564ee881b226a6eec"
+      },
+      {
+        "path": "src/session.js",
+        "sha256": "7cf49d1e415ac23f1385584051504fc11aa402d66ba0772842b0ed335b0ee935"
+      },
+      {
+        "path": "src/users.js",
+        "sha256": "5fdf40806b496c5f5f9c79d57ee3423f647cbc35c1e0dc9675aa8ea8659aef41"
+      },
+      {
+        "path": "src/services.js",
+        "sha256": "7b9832fa24c31918f8fa12d383292541920fb875022dfa72a58f995c1774733f"
+      },
+      {
+        "path": "src/orders.js",
+        "sha256": "c4ab4796260d39ff36fd1605767bc32669f3dd96e2402a4bbfe83fec08618e5e"
+      },
+      {
+        "path": "docs/checkout.md",
+        "sha256": "9d92d7a55a9c1f97843f191d763912d5007932fb039779967de16350e5009cda"
+      }
+    ],
+    "omitted": []
+  }
+}

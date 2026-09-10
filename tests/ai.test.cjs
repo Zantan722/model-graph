@@ -11,7 +11,7 @@ const {scanFolder,readSelection,run,generationArgs,makePrompt,parseFileSelection
   await fs.mkdir(path.join(root,'node_modules'));await fs.writeFile(path.join(root,'node_modules','x.js'),'excluded');
   await fs.writeFile(path.join(root,'large.txt'),'x'.repeat(65000));
   await fs.symlink('/etc/passwd',path.join(root,'linked.txt'));
-  const listing=await scanFolder(root);assert.deepEqual(listing.files.map(f=>f.path),['README.md']);
+  const listing=await scanFolder(root);assert.deepEqual(listing.files.map(f=>f.path).sort(),['README.md','large.txt'].sort());
   assert.deepEqual(parseFileSelection('["README.md"]',listing.files),['README.md']);
   assert.throws(()=>parseFileSelection('["../secret.txt"]',listing.files));
   assert.throws(()=>parseFileSelection('[]',listing.files));

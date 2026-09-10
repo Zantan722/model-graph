@@ -10,6 +10,10 @@ files:
   - preload.cjs
   - ai.cjs
   - ai-ipc.cjs
+  - stories.cjs
+  - repo-analysis.cjs
+  - report-store.cjs
+  - diagram-parser.cjs
   - renderer/**/*
   - package.json
   - "!node_modules/**/*"
