@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+async function load(file){const r=await build({entryPoints:[new URL(file,import.meta.url).pathname],bundle:true,platform:'node',format:'esm',write:false});return import('data:text/javascript;base64,'+Buffer.from(r.outputFiles[0].text).toString('base64'));}
+const {parseGraph,initialGraph}=await load('../lib/graph.ts');
+const {importPuml}=await load('../lib/puml.ts');
+const {loadWorkspace,backupRecovery,STORAGE_KEY}=await load('../lib/workspace.ts');
+const g=initialGraph('architecture');
+assert.throws(()=>parseGraph({...g,nodes:[{...g.nodes[0],kind:{toString:null}}]}));
+assert.throws(()=>parseGraph({...g,nodes:[{...g.nodes[0],x:1e200}]}));
+assert.throws(()=>parseGraph({...g,notes:Array.from({length:501},(_,i)=>({id:`c${i}`,nodeId:g.nodes[0].id,text:'a',resolved:false}))}));
+assert.equal(parseGraph({...g,unexpected:'discard'}).unexpected,undefined);
+for(const fields of ['"diagram":{"toString":null}','"diagram":[]'])assert.doesNotThrow(()=>importPuml(`@startuml\n' @modelgraph {${fields}}\nA -> B\n@enduml`));
+assert.doesNotThrow(()=>importPuml(`@startuml\n' @modelgraph-node A {"kind":{"toString":null}}\nparticipant A\n@enduml`));
+assert.ok(importPuml('@startuml\n'+('invalid\n'.repeat(250))+'@enduml').errors.length<=100);
+assert.ok(importPuml('@startuml\n'+('A'.repeat(65000))+'\n@enduml').errors.length);
+const map=new Map();const storage={getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,v)};
+const raw=JSON.stringify({architecture:g,sequence:{nodes:'invalid'}});map.set(STORAGE_KEY,raw);
+const recovery=loadWorkspace(storage);assert.deepEqual(recovery.graphs.architecture,g);assert.deepEqual(recovery.problems,['sequence']);assert.equal(map.get(STORAGE_KEY),raw,'Loading never overwrites data');
+const backup=backupRecovery(storage,recovery);assert.equal(map.get(backup),raw);
+assert.throws(()=>backupRecovery({getItem:()=>null,setItem:()=>{throw new Error('quota');}},recovery));
+map.set(STORAGE_KEY,'broken json');assert.ok(loadWorkspace(storage).problems.length);assert.equal(map.get(STORAGE_KEY),'broken json');
+console.log('Audit regressions passed: malformed import, bounded parsing, schema normalization, isolated recovery, and failed backup.');

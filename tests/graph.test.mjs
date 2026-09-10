@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+const result=await build({entryPoints:[new URL('../lib/graph.ts',import.meta.url).pathname],bundle:true,format:'esm',platform:'node',write:false});
+const {initialGraph,parseGraph,applyPrompt,edgeGeometry}=await import('data:text/javascript;base64,'+Buffer.from(result.outputFiles[0].text).toString('base64'));
+for(const level of ['architecture','workflow','sequence','dataflow','lifecycle','Context','Container','Component','Code']) {
+ const g=initialGraph(level);assert.deepEqual(parseGraph(JSON.parse(JSON.stringify(g))),g);
+ assert.ok(g.edges.every(e=>g.nodes.some(n=>n.id===e.source)&&g.nodes.some(n=>n.id===e.target)));
+}
+const before=initialGraph('Container');const original=JSON.stringify(before);
+const next=applyPrompt(before,'Browser → API → PostgreSQL');
+assert.equal(next.nodes.length,3);assert.equal(next.edges.length,2);assert.equal(next.nodes[2].kind,'database');assert.equal(JSON.stringify(before),original);
+assert.equal(applyPrompt(before,'新增 Redis').nodes.at(-1).name,'Redis');
+assert.throws(()=>applyPrompt(before,'幫我想一個系統'),/AI/);
+assert.throws(()=>parseGraph({...before,edges:[{id:'bad',source:'missing',target:'n0',label:'bad'}]}));
+assert.throws(()=>parseGraph({...before,nodes:[before.nodes[0],before.nodes[0]]}));
+assert.throws(()=>parseGraph({...before,nodes:[{...before.nodes[0],x:Infinity}]}));
+assert.throws(()=>parseGraph({...before,notes:[{id:'bad',nodeId:'missing',text:'test',resolved:false}]}));
+const sequence=applyPrompt(initialGraph('sequence'),'Browser → API → Database → API → Browser','sequence');
+assert.equal(sequence.nodes.length,3,'Sequence reuses participants for repeated calls');
+assert.equal(sequence.edges.length,4);
+assert.equal(sequence.edges[3].target,sequence.nodes[0].id);
+const seqTemplate=initialGraph('sequence');
+assert.equal(seqTemplate.edges.filter(e=>e.messageType==='return').length,2);
+for(let i=0;i<seqTemplate.edges.length-1;i++)assert.ok(edgeGeometry(seqTemplate,seqTemplate.edges[i],i,true).y<edgeGeometry(seqTemplate,seqTemplate.edges[i+1],i+1,true).y);
+const flow=applyPrompt(initialGraph('workflow'),'開始 → 通過？ → 結束','workflow');
+assert.deepEqual(flow.nodes.map(n=>n.kind),['start','decision','end']);
+const state=initialGraph('lifecycle'),loop=state.edges.find(e=>e.source===e.target);
+assert.ok(loop);assert.ok(edgeGeometry(state,loop,0,false).d.includes('C'));
+assert.deepEqual(applyPrompt(initialGraph('dataflow'),'Events → Transform → Report','dataflow').nodes.map(n=>n.kind),['source','process','sink']);
+assert.throws(()=>parseGraph({...seqTemplate,edges:[{...seqTemplate.edges[0],messageType:'invalid'}]}));
+console.log('Graph checks passed: five diagram types + C4, import validation, type-aware prompts, sequence reuse/order, and state loops.');

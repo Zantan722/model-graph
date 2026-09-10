@@ -1,0 +1,28 @@
+appId: io.modelgraph.desktop
+productName: Model Graph
+icon: desktop/icon.png
+directories:
+  app: desktop-app
+  output: release
+files:
+  - main.cjs
+  - protocol.cjs
+  - renderer/**/*
+  - package.json
+  - "!node_modules/**/*"
+asar: true
+npmRebuild: false
+mac:
+  category: public.app-category.developer-tools
+  identity: null
+  target:
+    - zip
+    - dmg
+win:
+  target:
+    - nsis
+linux:
+  category: Development
+  target:
+    - AppImage
+artifactName: 'Model-Graph-${version}-${os}-${arch}.${ext}'
