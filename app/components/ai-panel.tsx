@@ -2,9 +2,9 @@
 import {useEffect,useState,useRef} from 'react';
 import {FlowLibrary} from './flow-library';
 import type {SourceFolder,RepoStory,ProjectReport} from '../../lib/desktop-ai';
-import {importPuml} from '../../lib/puml';
+import {importPuml,type PumlResult} from '../../lib/puml';
 import type {DiagramType} from '../../lib/diagram-types';
-export function AIPanel({prompt,current,diagram,level,selection,onPreview,onPrompt,onLocal,onDiagram,onReport,onBusy,storyToRefine}:{onReport:(report:ProjectReport)=>void;onBusy:(busy:boolean)=>void;storyToRefine:RepoStory|null;onDiagram:(diagram:DiagramType,level:string)=>void;onPrompt:(value:string)=>void;onLocal:()=>void;prompt:string;current:string;diagram:DiagramType;level:string;selection:string;onPreview:(source:string)=>void}){
+export function AIPanel({prompt,current,diagram,level,selection,onPreview,onPrompt,onLocal,onDiagram,onReport,onBusy,onGenerated,storyToRefine}:{onGenerated:(result:PumlResult)=>void;onReport:(report:ProjectReport,live?:boolean)=>void;onBusy:(busy:boolean)=>void;storyToRefine:RepoStory|null;onDiagram:(diagram:DiagramType,level:string)=>void;onPrompt:(value:string)=>void;onLocal:()=>void;prompt:string;current:string;diagram:DiagramType;level:string;selection:string;onPreview:(source:string)=>void}){
  const [desktop,setDesktop]=useState(false),[provider,setProvider]=useState('local'),[custom,setCustom]=useState(''),[model,setModel]=useState('');
  const [intent,setIntent]=useState<'diagram'|'project'>('project');
  const runId=useRef('');
@@ -13,7 +13,7 @@ export function AIPanel({prompt,current,diagram,level,selection,onPreview,onProm
  useEffect(()=>{setDesktop(Boolean(window.modelGraphAI));if(window.modelGraphAI){let saved='codex';try{const value=localStorage.getItem('modelgraph-ai-provider');if(value&&['local','claude','codex'].includes(value))saved=value;}catch{}setProvider(saved);}},[]);
  function changeProvider(value:string){setProvider(value);setCustom('');setModel('');setStatus('');setError('');try{localStorage.setItem('modelgraph-ai-provider',value);}catch{setStatus('無法記住提供者設定，本次選擇仍有效');}}
  const providerLabel=provider==='codex'?'Codex CLI':provider==='claude'?'Claude Code':'本機規則';
- useEffect(()=>{const api=window.modelGraphAI;if(!api)return;api.report().then(report=>{if(report)onReport(report);}).catch(e=>setError(`上次報告讀取失敗：${e.message}`));return api.onProgress(event=>{if(event.runId!==runId.current)return;if(event.message)setStatus(event.message);if(event.report)onReport(event.report);});},[onReport]);
+ useEffect(()=>{const api=window.modelGraphAI;if(!api)return;api.report().then(report=>{if(report&&!runId.current)onReport(report);}).catch(e=>setError(`上次報告讀取失敗：${e.message}`));return api.onProgress(event=>{if(event.runId!==runId.current)return;if(event.message)setStatus(event.message);if(event.report)onReport(event.report,true);});},[onReport]);
  useEffect(()=>{onBusy(busy);},[busy,onBusy]);
  useEffect(()=>{if(storyToRefine)chooseStory(storyToRefine);},[storyToRefine]);
  async function check(){setChecking(true);setError('');try{const r=await window.modelGraphAI!.check(provider,custom);setStatus(`${r.version} · ${r.auth}`);}catch(e){setError((e as Error).message);}finally{setChecking(false);}}
@@ -23,11 +23,11 @@ export function AIPanel({prompt,current,diagram,level,selection,onPreview,onProm
  async function generate(){if(!canGenerate)return;if(provider==='local'){onLocal();return;}runId.current=crypto.randomUUID();setBusy(true);setError('');setResult('');setUsedFiles([]);setStatus(`${providerLabel} 正在分析並產圖，正在建立分析計畫…`);try{
  const r=await window.modelGraphAI!.generate({provider,custom,model,prompt,current,diagram,level,selection,files:[],useFolder:Boolean(folder),intent,runId:runId.current});
  setUsedFiles(r.files);
- if(r.kind==='project'){onReport(r.report);setStatus(`分析${r.report.status==='complete'?'完成':'結束（保留已完成結果）'}：${r.report.themes.length} 個主題，${r.report.themes.reduce((n,t)=>n+t.stories.filter(s=>s.flowStatus==='ready').length,0)} 份 Flow`);return;}
+ if(r.kind==='project'){onReport(r.report,true);setStatus(`分析${r.report.status==='complete'?'完成':'結束（保留已完成結果）'}：${r.report.themes.length} 個主題，${r.report.themes.reduce((n,t)=>n+t.stories.filter(s=>s.flowStatus==='ready').length,0)} 份 Flow`);return;}
  const parsed=importPuml(r.source,diagram);
  if(parsed.errors.length){setError(`結果需要修正：${parsed.errors.slice(0,3).map(e=>`第 ${e.line} 行 ${e.message}`).join('；')}`);}
- setResult(r.source);setStatus(`產圖完成 · 使用 ${r.files.length} 份來源。請檢查結果再套用。`);
- }catch(e){setError((e as Error).message);setStatus('畫布未更動');}finally{setBusy(false);}}
+ setResult(r.source);if(!parsed.errors.length){onGenerated(parsed);setStatus(`產圖完成 · 使用 ${r.files.length} 份來源，已自動同步到畫布，可復原。`);}else{setStatus('結果未通過檢查，請修正 PUML 後套用。');}
+ }catch(e){setError((e as Error).message);setStatus('產圖已停止；已同步的畫布與完成結果保留。');}finally{setBusy(false);}}
  return <section className="ai-panel unified-composer" aria-label="圖表產生器">
  <label>產圖提供者<select aria-label="產圖提供者" value={provider} disabled={busy||checking} onChange={e=>changeProvider(e.target.value)}><option value="local">本機規則（離線）</option><option value="claude" disabled={!desktop}>Claude Code</option><option value="codex" disabled={!desktop}>Codex CLI</option></select></label>
  {provider!=='local'&&<label>本次產出<select aria-label="分析模式" value={intent} disabled={busy||checking} onChange={e=>setIntent(e.target.value as 'diagram'|'project')}><option value="diagram">修改／產生單張指定圖表</option><option value="project">主題式 Repo 分析 · 多 Story／Flow</option></select></label>}

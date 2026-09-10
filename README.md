@@ -153,3 +153,9 @@ Smoke test 使用獨立暫存使用者資料目錄，檢查真實 Electron rende
 實際模型測試需明確開啟：`MODELGRAPH_LIVE_TEST=1 node scripts/test-live-analysis.cjs`。只會傳送已提交的合成測試 repo，會消耗所選 CLI 額度；驗證至少兩個主題、四份有效 Flow，且登入／結帳故事不混入另一主題。
 
 本次實際 Codex 驗證完成 **2 個主題、5 份不同且可解析的 Flow**。收據在 [docs/validation/0.4.0-codex-live.json](docs/validation/0.4.0-codex-live.json)，可用 `node tests/live-report.test.cjs` 離線重播檢查來源指紋、引用片段與圖表。這是合成 repo 的實測，不等於所有專案的語意正確性保證。
+
+## 畫布自動同步
+
+主題分析中，每完成一份通過 PUML 檢查的 Flow，就會自動切到畫布顯示；不必等待整份報告結束。畫布的「已完成 Flow」選單可切換各主題的圖表，原始圖與來源仍保存在主題報告。單張產圖也會直接套用，未通過檢查的結果保留供修正。
+
+手動編輯、復原、切換 Flow 或開啟 PUML 編輯器時會暫停自動同步，避免打斷修改。按「自動同步：暫停」可恢復並顯示最新完成的 Flow；每次套用都可復原。恢復上次報告時不會覆寫已保存的畫布。畫布編輯可另存流程庫，主題報告中的 AI 原始 Flow 不會隨手動編輯改寫。

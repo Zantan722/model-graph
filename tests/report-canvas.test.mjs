@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+const built=await build({entryPoints:['lib/report-canvas.ts'],bundle:true,format:'esm',platform:'node',write:false});
+const {collectReadyFlows}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].text).toString('base64'));
+const source='@startuml\nparticipant A\nparticipant B\nA -> B : hello\n@enduml';
+const story={id:'same-id',title:'Flow',diagram:'sequence',flowStatus:'ready',source};
+const report={id:'run1',themes:[{id:'one',title:'One',stories:[story,{...story,id:'pending',flowStatus:'generating'},{...story,id:'failed',flowStatus:'failed'},{...story,id:'invalid',source:'@startuml\n!include /bad\n@enduml'}]},{id:'two',title:'Two',stories:[story]}]};
+const flows=collectReadyFlows(report);
+assert.equal(flows.length,2);assert.notEqual(flows[0].id,flows[1].id);
+assert.notEqual(flows[0].id,collectReadyFlows({...report,id:'run2'})[0].id);
+assert.equal(flows[0].parsed.diagram,'sequence');assert.equal(flows[0].parsed.graph.edges.length,1);
+assert.equal(flows[0].source,source);
+console.log('Canvas flow validation and cross-theme/run identity passed.');
