@@ -1,0 +1,6 @@
+import type {Graph} from '../../lib/graph';
+export function GraphPreview({graph}:{graph:Graph}){
+ const nodes=graph.nodes;if(!nodes.length)return <p>沒有節點</p>;
+ const points=new Map(nodes.map((n,i)=>[n.id,{x:40+(i%3)*240,y:40+Math.floor(i/3)*140}]));
+ return <svg className="ai-graph-preview" viewBox={`0 0 760 ${Math.ceil(nodes.length/3)*140+40}`} role="img" aria-label="套用前的圖形關係預覽"><defs><marker id="preview-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>{graph.edges.map(e=>{const a=points.get(e.source),b=points.get(e.target);if(!a||!b)return null;return <g key={e.id}><line x1={a.x+90} y1={a.y+36} x2={b.x+90} y2={b.y+36} stroke="currentColor" markerEnd="url(#preview-arrow)"/><text x={(a.x+b.x)/2+90} y={(a.y+b.y)/2+24} fontSize="12" textAnchor="middle">{e.label.slice(0,20)}</text></g>;})}{nodes.map(n=>{const p=points.get(n.id)!;return <g key={n.id}><rect x={p.x} y={p.y} width="180" height="72" rx="8" fill="var(--soft)" stroke="var(--accent)"/><text x={p.x+90} y={p.y+40} textAnchor="middle" fontSize="14">{n.name.slice(0,20)}</text><title>{n.name}</title></g>;})}</svg>;
+}

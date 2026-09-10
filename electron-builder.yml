@@ -7,6 +7,9 @@ directories:
 files:
   - main.cjs
   - protocol.cjs
+  - preload.cjs
+  - ai.cjs
+  - ai-ipc.cjs
   - renderer/**/*
   - package.json
   - "!node_modules/**/*"

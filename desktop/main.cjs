@@ -15,6 +15,8 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let window;
+const cancelAI = require('./ai-ipc.cjs').installAI(() => window);
+app.on('before-quit', cancelAI);
 let downloadResult;
 let finishDownload;
 if (smoke) downloadResult = new Promise(resolve => { finishDownload = resolve; });
@@ -22,12 +24,12 @@ function createWindow() {
   window = new BrowserWindow({
     title: 'Model Graph', width: 1440, height: 940, minWidth: 360, minHeight: 600,
     backgroundColor: '#f8f9fa', show: !smoke,
-    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true },
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true },
   });
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.webContents.on('will-attach-webview', event => event.preventDefault());
-  window.on('closed', () => { window = null; });
+  window.on('closed', () => { cancelAI(); window = null; });
   window.loadURL('modelgraph://app/').catch(error => {
     if (smoke) { console.error(error); app.exit(1); }
     else dialog.showErrorBox('無法開啟 Model Graph', error.message);
@@ -73,11 +75,17 @@ async function runSmoke(win) {
       move('mouseMove',position.x+40,position.y+25);await settle();move('mouseUp',position.x+40,position.y+25);await settle();
       await win.webContents.executeJavaScript(`document.querySelector('[aria-label="復原"]').click()`);await settle();
       move('mouseMove',position.x,position.y);move('mouseDown',position.x,position.y);move('mouseUp',position.x,position.y);await settle();
+      const aiBridge=await win.webContents.executeJavaScript(`(async()=>{if(!window.modelGraphAI)return false;return await window.modelGraphAI.cancel();})()`);
+      if(!aiBridge)throw new Error('AI preload bridge unavailable');
+      const unifiedComposer=await win.webContents.executeJavaScript(`document.querySelectorAll('[aria-label="產生圖表"]').length===1 && document.querySelectorAll('[aria-label="圖表描述"]').length===1 && document.querySelector('[aria-label="產圖提供者"]').options.length===3`);
+      if(!unifiedComposer)throw new Error('Expected a single prompt and generation action');
+      const providerSaved=await win.webContents.executeJavaScript(`(()=>{const select=document.querySelector('[aria-label="產圖提供者"]');if(select.value!=='codex')return false;select.value='claude';select.dispatchEvent(new Event('change',{bubbles:true}));if(localStorage.getItem('modelgraph-ai-provider')!=='claude')return false;select.value='codex';select.dispatchEvent(new Event('change',{bubbles:true}));return localStorage.getItem('modelgraph-ai-provider')==='codex';})()`);
+      if(!providerSaved)throw new Error('Provider preference did not persist');
       const redoPreserved=await win.webContents.executeJavaScript(`!document.querySelector('[aria-label="重做"]').disabled`);
       if(!redoPreserved)throw new Error('Selecting a node cleared redo history');
       const saved = await downloadResult;
       if (!saved) throw new Error('PUML download failed');
-      console.log('Desktop smoke test passed:', JSON.stringify({ ...result, pumlDownload: true, redoPreserved: true }));
+      console.log('Desktop smoke test passed:', JSON.stringify({ ...result, pumlDownload: true, redoPreserved, aiBridge: true, unifiedComposer, providerSaved }));
       clearTimeout(timeout); app.exit(0);
     } catch (error) { console.error(error); clearTimeout(timeout); app.exit(1); }
   });
