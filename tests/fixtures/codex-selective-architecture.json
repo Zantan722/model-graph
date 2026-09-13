@@ -1,0 +1,726 @@
+{
+  "version": 2,
+  "diagram": "architecture",
+  "level": "Container",
+  "prompt": "分析此專案的整體模組架構，以及登入或訂單子系統的結構。依實際依賴與責任整理視圖說明，不要成功／失敗 Story。",
+  "snapshotAvailable": true,
+  "id": "2ed90a92-02c9-481f-b7f5-9a4ee1180c56",
+  "createdAt": "2026-09-13T16:05:53.926Z",
+  "project": "thematic-repo",
+  "title": "Shop example 模組架構調查",
+  "summary": "依 README.md 概覽與 repository index，專案包含 user sessions 與 order checkout 兩項業務能力。先建立整體模組責任與依賴概覽，再分別調查登入及訂單子系統。後續以限定路徑的讀取與搜尋確認入口、imports、重要程式單元、執行邊界、儲存及傳輸介面；目前索引未列出部署設定，不預設部署拓撲。各視圖沿用一致的程式識別名稱，保留同一程序內的邏輯模組，僅依實際呼叫與資料依賴建立關係，不以檔案位置推斷連線，也不描述成功／失敗 Story。",
+  "status": "awaiting_selection",
+  "themes": [
+    {
+      "id": "theme-1",
+      "title": "整體模組責任與依賴概覽",
+      "question": "src/session.js、src/users.js、src/orders.js 與 src/services.js 各自公開哪些重要程式單元？實際入口、imports、呼叫及資料依賴如何串接登入與結帳能力，哪些邊界屬於邏輯模組或外部執行環境？",
+      "rationale": "先建立兩項業務能力共用的架構基準，確認模組責任及依賴方向，讓後續子系統視圖沿用相同識別名稱；只有程式或文件支持時才補充整合與部署視圖。",
+      "paths": [
+        "README.md",
+        "src/session.js",
+        "src/users.js",
+        "src/orders.js",
+        "src/services.js"
+      ],
+      "status": "described",
+      "views": [
+        {
+          "id": "theme-1-view-1",
+          "title": "登入與結帳邏輯模組責任與依賴總覽",
+          "summary": "呈現四個來源模組公開的重要程式單元、具名 imports、實際呼叫與資料依賴。登入與結帳各有可由程式碼確認的依賴鏈；現有證據未建立兩者之間的呼叫或 session 傳遞關係。",
+          "purpose": "src/session.js、src/users.js、src/orders.js 與 src/services.js 分別提供哪些公開程式單元，如何支援登入與結帳，以及哪些邊界可確認為邏輯模組？",
+          "scope": "包含四個來源模組的公開函式與資料集合、模組間呼叫及記憶體資料責任。僅概述登入與結帳結構，排除條件分支、session 欄位細節與庫存演算法；不建立未有證據的路由、外部支付服務、程序或部署節點。",
+          "diagram": "architecture",
+          "level": "Container",
+          "content": {
+            "kind": "structure",
+            "items": [
+              {
+                "id": "src/session.js",
+                "type": "element",
+                "title": "src/session.js：登入協調",
+                "description": "公開 login(email, password)，使用 src/users.js 的函式查詢使用者、比對密碼並建立 session。這是來源碼中的公開函式入口，尚無證據確認其應用層呼叫者。",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 1,
+                    "endLine": 6,
+                    "excerpt": "import { findUser, matchesPassword, issueSession } from './users.js';\nexport function login(email, password) {\n  const user = findUser(email);\n  if (!user || !matchesPassword(user, password)) return { status: 401, error: 'invalid_credentials' };\n  return { status: 200, session: issueSession(user.id) };\n}"
+                  }
+                ]
+              },
+              {
+                "id": "src/users.js",
+                "type": "element",
+                "title": "src/users.js：使用者查詢與 session 建立",
+                "description": "公開 findUser(email)、matchesPassword(user, password) 與 issueSession(id)。分別負責查詢私有 users 陣列、比對傳入使用者的密碼，以及建立 session 物件。users 是模組內記憶體資料；所示實作未儲存 session。",
+                "evidence": [
+                  {
+                    "path": "src/users.js",
+                    "startLine": 1,
+                    "endLine": 4,
+                    "excerpt": "const users = [{ id: 'u1', email: 'demo@example.test', password: 'example-only' }];\nexport function findUser(email) { return users.find(user => user.email === email); }\nexport function matchesPassword(user, password) { return user.password === password; }\nexport function issueSession(id) { return { userId: id, expiresIn: 3600 }; }"
+                  }
+                ]
+              },
+              {
+                "id": "src/orders.js",
+                "type": "element",
+                "title": "src/orders.js：結帳協調",
+                "description": "公開 async checkout(order)，協調 src/services.js 提供的庫存操作、付款判定與訂單記錄。order 提供品項與金額資料；函式未引用登入模組或 session。",
+                "evidence": [
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 1,
+                    "endLine": 11,
+                    "excerpt": "import { reserveStock, releaseStock, charge, saveOrder } from './services.js';\nexport async function checkout(order) {\n  if (!reserveStock(order.item)) return { status: 409, error: 'out_of_stock' };\n  const payment = await charge(order.total);\n  if (!payment.accepted) {\n    releaseStock(order.item);\n    return { status: 402, error: 'payment_declined' };\n  }\n  saveOrder({ ...order, state: 'paid' });\n  return { status: 201, state: 'paid' };\n}"
+                  }
+                ]
+              },
+              {
+                "id": "src/services.js",
+                "type": "element",
+                "title": "src/services.js：庫存、付款替身與訂單資料",
+                "description": "公開 reserveStock(item)、releaseStock(item)、async charge(amount)、saveOrder(order) 與 orders 陣列。庫存函式讀寫私有 inventory Map，saveOrder 寫入 orders；兩者均為模組內記憶體資料。charge 是本地確定性付款替身。此來源模組沒有可證實的獨立服務或外部支付執行邊界。",
+                "evidence": [
+                  {
+                    "path": "src/services.js",
+                    "startLine": 1,
+                    "endLine": 10,
+                    "excerpt": "const inventory = new Map([['book', 2]]);\nexport const orders = [];\nexport function reserveStock(item) {\n  const count = inventory.get(item) || 0;\n  if (!count) return false;\n  inventory.set(item, count - 1); return true;\n}\nexport function releaseStock(item) { inventory.set(item, (inventory.get(item) || 0) + 1); }\nexport async function charge(amount) { return { accepted: amount <= 100 }; }\nexport function saveOrder(order) { orders.push(order); }"
+                  },
+                  {
+                    "path": "docs/checkout.md",
+                    "startLine": 4,
+                    "endLine": 4,
+                    "excerpt": "The payment service in this example is a deterministic stub, not a real gateway."
+                  }
+                ]
+              },
+              {
+                "id": "src/session.js->src/users.js",
+                "type": "relationship",
+                "title": "具名 import 與呼叫：使用者查詢、密碼比對及 session 建立",
+                "description": "login 匯入並呼叫 findUser、matchesPassword 與 issueSession。email 傳給 findUser；查得的 user 與 password 傳給 matchesPassword；user.id 傳給 issueSession，建立的物件供 login 回傳。",
+                "from": "src/session.js",
+                "to": "src/users.js",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 1,
+                    "endLine": 6,
+                    "excerpt": "import { findUser, matchesPassword, issueSession } from './users.js';\nexport function login(email, password) {\n  const user = findUser(email);\n  if (!user || !matchesPassword(user, password)) return { status: 401, error: 'invalid_credentials' };\n  return { status: 200, session: issueSession(user.id) };\n}"
+                  }
+                ]
+              },
+              {
+                "id": "src/orders.js->src/services.js",
+                "type": "relationship",
+                "title": "具名 import 與呼叫：庫存操作、付款判定及訂單寫入",
+                "description": "checkout 匯入並呼叫 reserveStock、releaseStock、charge 與 saveOrder。order.item 提供庫存操作參數，order.total 傳給 charge；checkout 以 await 取得付款判定物件並讀取 accepted。saveOrder 接收附加 state 的訂單物件。所示實作是模組間函式呼叫，未包含網路傳輸。",
+                "from": "src/orders.js",
+                "to": "src/services.js",
+                "evidence": [
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 1,
+                    "endLine": 9,
+                    "excerpt": "import { reserveStock, releaseStock, charge, saveOrder } from './services.js';\nexport async function checkout(order) {\n  if (!reserveStock(order.item)) return { status: 409, error: 'out_of_stock' };\n  const payment = await charge(order.total);\n  if (!payment.accepted) {\n    releaseStock(order.item);\n    return { status: 402, error: 'payment_declined' };\n  }\n  saveOrder({ ...order, state: 'paid' });"
+                  },
+                  {
+                    "path": "src/services.js",
+                    "startLine": 3,
+                    "endLine": 10,
+                    "excerpt": "export function reserveStock(item) {\n  const count = inventory.get(item) || 0;\n  if (!count) return false;\n  inventory.set(item, count - 1); return true;\n}\nexport function releaseStock(item) { inventory.set(item, (inventory.get(item) || 0) + 1); }\nexport async function charge(amount) { return { accepted: amount <= 100 }; }\nexport function saveOrder(order) { orders.push(order); }"
+                  }
+                ]
+              }
+            ]
+          },
+          "uncertainty": "提供的檔案未包含應用啟動程式、login 或 checkout 的上層呼叫者、路由註冊、傳輸介面、套件設定或部署配置，無法確認實際應用入口、執行環境及程序拓撲。README 的 session routes 用語與函式回傳的 status 欄位不足以確認 HTTP 邊界。未見登入與結帳之間的授權整合或共用使用者資料依賴。此視圖描述邏輯來源模組，不代表四個獨立程序，也不採用 C4 層級語義。",
+          "status": "ready",
+          "source": "@startuml\n' @modelgraph {\"version\":1,\"diagram\":\"architecture\",\"level\":\"Container\"}\n\n\ncomponent \"src/session.js\\n登入協調\\n公開：login(email, password)\" as \"src/session.js\"\ncomponent \"src/users.js\\n使用者查詢、密碼比對與 session 建立\\n公開：findUser(email)\\nmatchesPassword(user, password)\\nissueSession(id)\" as \"src/users.js\"\ncomponent \"src/orders.js\\n結帳協調\\n公開：async checkout(order)\" as \"src/orders.js\"\ncomponent \"src/services.js\\n庫存操作、付款替身與訂單記錄\\n公開：reserveStock(item)、releaseStock(item)\\nasync charge(amount)、saveOrder(order)\\norders 陣列\" as \"src/services.js\"\n\nrectangle \"users\\n私有記憶體陣列\" as \"src/users.js::users\"\nrectangle \"inventory\\n私有記憶體 Map\" as \"src/services.js::inventory\"\nrectangle \"orders\\n公開記憶體陣列\" as \"src/services.js::orders\"\n\n\"src/session.js\" --> \"src/users.js\" : 具名 import 與呼叫\\nfindUser(email)\\nmatchesPassword(user, password)\\nissueSession(user.id)\n\"src/orders.js\" --> \"src/services.js\" : 具名 import 與呼叫\\nreserveStock(order.item)、releaseStock(order.item)\\nawait charge(order.total)：取得付款判定\\nsaveOrder({...order, state: 'paid'})\n\"src/users.js\" --> \"src/users.js::users\" : findUser：依 email 查詢\n\"src/services.js\" --> \"src/services.js::inventory\" : reserveStock、releaseStock：讀寫庫存\n\"src/services.js\" --> \"src/services.js::orders\" : saveOrder：push(order)；模組公開此集合\n\nnote right of \"src/session.js\" : src/session.js:1-6；login 回傳 issueSession 建立的物件。\nnote right of \"src/users.js\" : src/users.js:2-4；比對傳入 user 的密碼；issueSession 建立物件，未儲存 session。\nnote right of \"src/orders.js\" : src/orders.js:1-11；order 提供品項與金額；未引用登入模組或 session。\nnote right of \"src/services.js\" : src/services.js:1-10；charge 是本地確定性付款替身（docs/checkout.md:4），未見網路傳輸。\nnote right of \"src/users.js::users\" : src/users.js:1-2；模組內資料，未 export。\nnote right of \"src/services.js::inventory\" : src/services.js:1,3-8；模組內記憶體庫存。\nnote right of \"src/services.js::orders\" : src/services.js:2,10；export 陣列，由 saveOrder 寫入。\nnote right of \"src/orders.js\" : 證據不足：所提供檔案未建立登入與結帳間的呼叫或 session 傳遞關係。\nnote right of \"src/session.js\" : 邊界：此圖僅呈現邏輯來源模組。缺少啟動程式、上層呼叫者、路由、傳輸與部署配置，無法確認程序拓撲；不假設獨立服務或 HTTP 邊界。\n\n@enduml",
+          "warnings": []
+        }
+      ],
+      "gaps": [
+        "提供的完整索引未包含啟動檔、呼叫 login 或 checkout 的上層程式、路由註冊或傳輸適配器，無法確認實際應用入口及協定。",
+        "未提供套件、執行環境或部署設定，無法確認 runtime、程序配置、主機或部署拓撲。",
+        "現有程式碼未呈現登入與結帳之間的授權整合；若存在於索引以外，需要額外證據才能建立該關係。"
+      ]
+    },
+    {
+      "id": "theme-2",
+      "title": "登入、使用者資料與 session 結構",
+      "question": "登入入口、密碼驗證、使用者資料存取與 session 建立分別由哪些函式或模組負責？src/session.js 與 src/users.js 是否存在直接依賴，session 的表示、儲存及傳輸方式有何程式證據？",
+      "rationale": "README.md 明確指出 user sessions 能力，值得獨立釐清身分驗證與 session 管理的責任分界，而非以登入結果組織視圖。",
+      "paths": [
+        "README.md",
+        "src/session.js",
+        "src/users.js",
+        "src/services.js"
+      ],
+      "status": "described",
+      "views": [
+        {
+          "id": "theme-2-view-1",
+          "title": "登入、使用者資料與 session 職責總覽",
+          "summary": "呈現兩個來源模組的直接依賴，以及登入入口、使用者查詢、密碼比較與 session 建立的函式分工；區分使用者資料的記憶體儲存與 session 物件的函式回傳。",
+          "purpose": "登入、密碼驗證、使用者資料存取與 session 建立各由誰負責，兩個模組如何直接依賴，session 的表示與交付有哪些程式證據？",
+          "scope": "包含 src/session.js、src/users.js、四個公開函式、users 陣列與 session 回傳物件。排除訂單結帳，以及未有證據的 HTTP 路由、外部儲存、網路傳輸與部署節點；來源模組及函式均作為邏輯架構元素，不套用 C4 層級。",
+          "diagram": "architecture",
+          "level": "Container",
+          "content": {
+            "kind": "structure",
+            "items": [
+              {
+                "id": "src/session.js",
+                "type": "element",
+                "title": "src/session.js：登入協調模組",
+                "description": "匯出 login，直接匯入 src/users.js 的 findUser、matchesPassword 與 issueSession。",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 1,
+                    "endLine": 6,
+                    "excerpt": "import { findUser, matchesPassword, issueSession } from './users.js';\nexport function login(email, password) {\n  const user = findUser(email);\n  if (!user || !matchesPassword(user, password)) return { status: 401, error: 'invalid_credentials' };\n  return { status: 200, session: issueSession(user.id) };\n}"
+                  }
+                ]
+              },
+              {
+                "id": "src/users.js",
+                "type": "element",
+                "title": "src/users.js：使用者資料與 session 建立模組",
+                "description": "持有模組內 users 陣列，提供使用者查詢、密碼比較與 session 物件建立函式。所示完整模組沒有對 src/session.js 的反向依賴。",
+                "evidence": [
+                  {
+                    "path": "src/users.js",
+                    "startLine": 1,
+                    "endLine": 4,
+                    "excerpt": "const users = [{ id: 'u1', email: 'demo@example.test', password: 'example-only' }];\nexport function findUser(email) { return users.find(user => user.email === email); }\nexport function matchesPassword(user, password) { return user.password === password; }\nexport function issueSession(id) { return { userId: id, expiresIn: 3600 }; }"
+                  }
+                ]
+              },
+              {
+                "id": "src/session.js::login",
+                "type": "element",
+                "title": "login(email, password)",
+                "description": "src/session.js 的公開登入函式入口，協調使用者查詢、密碼比較與 session 建立，並以回傳物件的 session 欄位交付 session。",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 2,
+                    "endLine": 6,
+                    "excerpt": "export function login(email, password) {\n  const user = findUser(email);\n  if (!user || !matchesPassword(user, password)) return { status: 401, error: 'invalid_credentials' };\n  return { status: 200, session: issueSession(user.id) };\n}"
+                  }
+                ]
+              },
+              {
+                "id": "src/users.js::findUser",
+                "type": "element",
+                "title": "findUser(email)",
+                "description": "src/users.js 的使用者查詢函式，以 email 嚴格相等比較搜尋 users 陣列。",
+                "evidence": [
+                  {
+                    "path": "src/users.js",
+                    "startLine": 2,
+                    "endLine": 2,
+                    "excerpt": "export function findUser(email) { return users.find(user => user.email === email); }"
+                  }
+                ]
+              },
+              {
+                "id": "src/users.js::matchesPassword",
+                "type": "element",
+                "title": "matchesPassword(user, password)",
+                "description": "src/users.js 的密碼驗證函式，直接比較 user.password === password；所示實作沒有雜湊驗證。",
+                "evidence": [
+                  {
+                    "path": "src/users.js",
+                    "startLine": 3,
+                    "endLine": 3,
+                    "excerpt": "export function matchesPassword(user, password) { return user.password === password; }"
+                  }
+                ]
+              },
+              {
+                "id": "src/users.js::issueSession",
+                "type": "element",
+                "title": "issueSession(id)",
+                "description": "src/users.js 的 session 建立函式，建立並回傳普通 JavaScript 物件，函式內沒有儲存寫入。",
+                "evidence": [
+                  {
+                    "path": "src/users.js",
+                    "startLine": 4,
+                    "endLine": 4,
+                    "excerpt": "export function issueSession(id) { return { userId: id, expiresIn: 3600 }; }"
+                  }
+                ]
+              },
+              {
+                "id": "src/users.js::users",
+                "type": "element",
+                "title": "users 陣列",
+                "description": "未匯出的模組作用域記憶體陣列；範例使用者記錄包含 id、email 與明文 password。findUser 從此陣列取得使用者資料。",
+                "evidence": [
+                  {
+                    "path": "src/users.js",
+                    "startLine": 1,
+                    "endLine": 2,
+                    "excerpt": "const users = [{ id: 'u1', email: 'demo@example.test', password: 'example-only' }];\nexport function findUser(email) { return users.find(user => user.email === email); }"
+                  }
+                ]
+              },
+              {
+                "id": "src/users.js::issueSession::return",
+                "type": "element",
+                "title": "session 物件",
+                "description": "表示為 { userId: id, expiresIn: 3600 }。所示函式未定義 expiresIn 的單位，也未實作到期處理。",
+                "evidence": [
+                  {
+                    "path": "src/users.js",
+                    "startLine": 4,
+                    "endLine": 4,
+                    "excerpt": "export function issueSession(id) { return { userId: id, expiresIn: 3600 }; }"
+                  }
+                ]
+              },
+              {
+                "id": "src/session.js->src/users.js",
+                "type": "relationship",
+                "title": "具名匯入並呼叫三個函式",
+                "description": "src/session.js 直接依賴 './users.js'，使用其 findUser、matchesPassword 與 issueSession；依賴由 import 與呼叫明確證實。",
+                "from": "src/session.js",
+                "to": "src/users.js",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 1,
+                    "endLine": 5,
+                    "excerpt": "import { findUser, matchesPassword, issueSession } from './users.js';\nexport function login(email, password) {\n  const user = findUser(email);\n  if (!user || !matchesPassword(user, password)) return { status: 401, error: 'invalid_credentials' };\n  return { status: 200, session: issueSession(user.id) };"
+                  }
+                ]
+              },
+              {
+                "id": "src/session.js::login->src/users.js::findUser",
+                "type": "relationship",
+                "title": "以 email 呼叫使用者查詢",
+                "description": "login 將 email 傳給 findUser，並以區域變數 user 接收查詢結果。",
+                "from": "src/session.js::login",
+                "to": "src/users.js::findUser",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 2,
+                    "endLine": 3,
+                    "excerpt": "export function login(email, password) {\n  const user = findUser(email);"
+                  }
+                ]
+              },
+              {
+                "id": "src/users.js::findUser->src/users.js::users",
+                "type": "relationship",
+                "title": "讀取陣列並比對 email",
+                "description": "findUser 透過 users.find 搜尋 email 相符的使用者記錄。",
+                "from": "src/users.js::findUser",
+                "to": "src/users.js::users",
+                "evidence": [
+                  {
+                    "path": "src/users.js",
+                    "startLine": 1,
+                    "endLine": 2,
+                    "excerpt": "const users = [{ id: 'u1', email: 'demo@example.test', password: 'example-only' }];\nexport function findUser(email) { return users.find(user => user.email === email); }"
+                  }
+                ]
+              },
+              {
+                "id": "src/session.js::login->src/users.js::matchesPassword",
+                "type": "relationship",
+                "title": "傳入使用者與密碼進行比較",
+                "description": "login 的密碼比較呼叫以查得的 user 與輸入 password 為參數。",
+                "from": "src/session.js::login",
+                "to": "src/users.js::matchesPassword",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 3,
+                    "endLine": 4,
+                    "excerpt": "  const user = findUser(email);\n  if (!user || !matchesPassword(user, password)) return { status: 401, error: 'invalid_credentials' };"
+                  }
+                ]
+              },
+              {
+                "id": "src/session.js::login->src/users.js::issueSession",
+                "type": "relationship",
+                "title": "以 user.id 呼叫 session 建立函式",
+                "description": "login 將使用者識別值 user.id 傳給 issueSession。",
+                "from": "src/session.js::login",
+                "to": "src/users.js::issueSession",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 5,
+                    "endLine": 5,
+                    "excerpt": "  return { status: 200, session: issueSession(user.id) };"
+                  }
+                ]
+              },
+              {
+                "id": "src/users.js::issueSession->src/users.js::issueSession::return",
+                "type": "relationship",
+                "title": "建立並回傳 session 物件",
+                "description": "issueSession 將 id 指派給 userId，設定 expiresIn 為 3600，並回傳該物件。",
+                "from": "src/users.js::issueSession",
+                "to": "src/users.js::issueSession::return",
+                "evidence": [
+                  {
+                    "path": "src/users.js",
+                    "startLine": 4,
+                    "endLine": 4,
+                    "excerpt": "export function issueSession(id) { return { userId: id, expiresIn: 3600 }; }"
+                  }
+                ]
+              },
+              {
+                "id": "src/session.js::login->src/users.js::issueSession::return",
+                "type": "relationship",
+                "title": "透過回傳值的 session 欄位交付",
+                "description": "login 將 issueSession 的回傳物件置於自身回傳值的 session 欄位。此處可證實的交付方式是 JavaScript 函式回傳。",
+                "from": "src/session.js::login",
+                "to": "src/users.js::issueSession::return",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 5,
+                    "endLine": 5,
+                    "excerpt": "  return { status: 200, session: issueSession(user.id) };"
+                  }
+                ]
+              }
+            ]
+          },
+          "uncertainty": "README.md 第 3 行提及 session routes，但提供的來源未展示路由註冊、login 呼叫端或伺服器啟動；回傳值的 status 欄位不足以證明 HTTP 傳輸。所示 session 實作沒有儲存、session ID、cookie、token、序列化、後續驗證或到期執行機制，無法確認呼叫端取得物件後如何儲存或傳輸。提供的檔案沒有部署配置，無法判定程序或主機邊界。",
+          "status": "proposed"
+        }
+      ],
+      "gaps": [
+        "未提供 src/session.js::login 的呼叫端、路由註冊或應用程式啟動入口，無法確認外部登入入口與執行環境。",
+        "未提供 session 接收端、持久化或後續驗證程式；無法確認函式回傳後的儲存、傳輸及到期處理。",
+        "索引內沒有部署或執行設定，無法確認程序拓撲、主機、網路端點或外部基礎設施。"
+      ]
+    },
+    {
+      "id": "theme-3",
+      "title": "訂單結帳、庫存與付款整合結構",
+      "question": "src/orders.js 如何分配結帳協調、庫存操作、付款操作與訂單記錄的責任？docs/checkout.md 與 src/services.js 是否支持具體依賴、資料所有權、儲存介面及外部傳輸邊界？",
+      "rationale": "README.md 指出結帳涉及庫存、付款及訂單記錄，具有不同於登入的協調與整合關注點；以模組責任及介面依賴呈現，並依證據決定是否另設整合細節視圖。",
+      "paths": [
+        "README.md",
+        "docs/checkout.md",
+        "src/orders.js",
+        "src/services.js"
+      ],
+      "status": "described",
+      "views": [
+        {
+          "id": "theme-3-view-1",
+          "title": "結帳協調、庫存、付款與訂單記錄結構總覽",
+          "summary": "呈現 checkout 對四個操作的函式依賴，以及庫存與訂單集合的資料責任。src/orders.js 負責結帳協調，src/services.js 提供庫存操作、本地付款替身與記憶體訂單寫入介面；docs/checkout.md 確認付款實作為確定性替身。",
+          "purpose": "checkout 如何分配庫存、付款與訂單記錄責任，這些操作依賴哪些資料，實際儲存與傳輸邊界為何？",
+          "scope": "包含 src/orders.js 的公開 checkout 入口、src/services.js 的四個操作及兩個資料集合，依明確匯入、呼叫與資料存取建立關係。排除登入細節、條件分支與情境流程，以及缺乏證據的外部支付服務、資料庫、路由與部署節點。函式與集合皆為邏輯架構元素。",
+          "diagram": "architecture",
+          "level": "Container",
+          "content": {
+            "kind": "structure",
+            "items": [
+              {
+                "id": "src/orders.js::checkout",
+                "type": "element",
+                "title": "checkout：結帳協調入口",
+                "description": "src/orders.js 匯出的非同步函式，透過具名匯入使用四個操作，分派 order.item 與 order.total、建立帶有 state 的訂單物件並組裝回傳結果；函式本身未持有庫存或訂單集合。",
+                "evidence": [
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 1,
+                    "endLine": 11,
+                    "excerpt": "import { reserveStock, releaseStock, charge, saveOrder } from './services.js';\nexport async function checkout(order) {\n  if (!reserveStock(order.item)) return { status: 409, error: 'out_of_stock' };\n  const payment = await charge(order.total);\n  if (!payment.accepted) {\n    releaseStock(order.item);\n    return { status: 402, error: 'payment_declined' };\n  }\n  saveOrder({ ...order, state: 'paid' });\n  return { status: 201, state: 'paid' };\n}"
+                  }
+                ]
+              },
+              {
+                "id": "src/services.js::reserveStock",
+                "type": "element",
+                "title": "reserveStock：庫存預留操作",
+                "description": "依品項查詢私有 inventory，負責可預留性判定與庫存數量扣減。",
+                "evidence": [
+                  {
+                    "path": "src/services.js",
+                    "startLine": 3,
+                    "endLine": 7,
+                    "excerpt": "export function reserveStock(item) {\n  const count = inventory.get(item) || 0;\n  if (!count) return false;\n  inventory.set(item, count - 1); return true;\n}"
+                  }
+                ]
+              },
+              {
+                "id": "src/services.js::releaseStock",
+                "type": "element",
+                "title": "releaseStock：庫存釋放操作",
+                "description": "依品項讀取 inventory，將該品項的庫存數量增加一。",
+                "evidence": [
+                  {
+                    "path": "src/services.js",
+                    "startLine": 8,
+                    "endLine": 8,
+                    "excerpt": "export function releaseStock(item) { inventory.set(item, (inventory.get(item) || 0) + 1); }"
+                  }
+                ]
+              },
+              {
+                "id": "src/services.js::charge",
+                "type": "element",
+                "title": "charge：本地付款替身",
+                "description": "以 amount <= 100 計算 accepted 欄位的非同步函式。docs/checkout.md 明確標示其為確定性替身；所示實作沒有外部 SDK、網路傳輸或付款資料寫入。",
+                "evidence": [
+                  {
+                    "path": "src/services.js",
+                    "startLine": 9,
+                    "endLine": 9,
+                    "excerpt": "export async function charge(amount) { return { accepted: amount <= 100 }; }"
+                  },
+                  {
+                    "path": "docs/checkout.md",
+                    "startLine": 4,
+                    "endLine": 4,
+                    "excerpt": "The payment service in this example is a deterministic stub, not a real gateway."
+                  }
+                ]
+              },
+              {
+                "id": "src/services.js::saveOrder",
+                "type": "element",
+                "title": "saveOrder：訂單追加介面",
+                "description": "將傳入訂單物件直接追加至 orders。這是 checkout 使用的記錄介面；orders 同時公開匯出，因此模組未強制所有寫入都經過此函式。",
+                "evidence": [
+                  {
+                    "path": "src/services.js",
+                    "startLine": 2,
+                    "endLine": 2,
+                    "excerpt": "export const orders = [];"
+                  },
+                  {
+                    "path": "src/services.js",
+                    "startLine": 10,
+                    "endLine": 10,
+                    "excerpt": "export function saveOrder(order) { orders.push(order); }"
+                  },
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 9,
+                    "endLine": 9,
+                    "excerpt": "  saveOrder({ ...order, state: 'paid' });"
+                  }
+                ]
+              },
+              {
+                "id": "src/services.js::inventory",
+                "type": "element",
+                "title": "inventory：模組私有庫存集合",
+                "description": "src/services.js 建立且未匯出的記憶體 Map，初始包含 book 品項、數量為 2。庫存操作直接讀寫此集合；所示模組沒有庫存持久化介面。",
+                "evidence": [
+                  {
+                    "path": "src/services.js",
+                    "startLine": 1,
+                    "endLine": 10,
+                    "excerpt": "const inventory = new Map([['book', 2]]);\nexport const orders = [];\nexport function reserveStock(item) {\n  const count = inventory.get(item) || 0;\n  if (!count) return false;\n  inventory.set(item, count - 1); return true;\n}\nexport function releaseStock(item) { inventory.set(item, (inventory.get(item) || 0) + 1); }\nexport async function charge(amount) { return { accepted: amount <= 100 }; }\nexport function saveOrder(order) { orders.push(order); }"
+                  }
+                ]
+              },
+              {
+                "id": "src/services.js::orders",
+                "type": "element",
+                "title": "orders：公開訂單記錄集合",
+                "description": "src/services.js 建立並匯出的可變記憶體陣列，初始為空。saveOrder 將訂單物件參照存入此集合；公開匯出允許匯入者直接操作陣列。",
+                "evidence": [
+                  {
+                    "path": "src/services.js",
+                    "startLine": 2,
+                    "endLine": 2,
+                    "excerpt": "export const orders = [];"
+                  },
+                  {
+                    "path": "src/services.js",
+                    "startLine": 10,
+                    "endLine": 10,
+                    "excerpt": "export function saveOrder(order) { orders.push(order); }"
+                  }
+                ]
+              },
+              {
+                "id": "src/orders.js::checkout->src/services.js::reserveStock",
+                "type": "relationship",
+                "title": "匯入並傳入 order.item",
+                "description": "checkout 呼叫 reserveStock，將品項的庫存預留責任委派給此操作。",
+                "from": "src/orders.js::checkout",
+                "to": "src/services.js::reserveStock",
+                "evidence": [
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 1,
+                    "endLine": 3,
+                    "excerpt": "import { reserveStock, releaseStock, charge, saveOrder } from './services.js';\nexport async function checkout(order) {\n  if (!reserveStock(order.item)) return { status: 409, error: 'out_of_stock' };"
+                  }
+                ]
+              },
+              {
+                "id": "src/orders.js::checkout->src/services.js::releaseStock",
+                "type": "relationship",
+                "title": "匯入並傳入 order.item",
+                "description": "checkout 呼叫 releaseStock，將品項的庫存釋放責任委派給此操作。",
+                "from": "src/orders.js::checkout",
+                "to": "src/services.js::releaseStock",
+                "evidence": [
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 1,
+                    "endLine": 6,
+                    "excerpt": "import { reserveStock, releaseStock, charge, saveOrder } from './services.js';\nexport async function checkout(order) {\n  if (!reserveStock(order.item)) return { status: 409, error: 'out_of_stock' };\n  const payment = await charge(order.total);\n  if (!payment.accepted) {\n    releaseStock(order.item);"
+                  }
+                ]
+              },
+              {
+                "id": "src/orders.js::checkout->src/services.js::charge",
+                "type": "relationship",
+                "title": "以 order.total 呼叫並等待付款判定",
+                "description": "checkout 使用匯入的 charge，以 await 取得付款判定物件並讀取 accepted 欄位。此依賴為本地函式呼叫，所示實作未跨越外部傳輸邊界。",
+                "from": "src/orders.js::checkout",
+                "to": "src/services.js::charge",
+                "evidence": [
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 1,
+                    "endLine": 5,
+                    "excerpt": "import { reserveStock, releaseStock, charge, saveOrder } from './services.js';\nexport async function checkout(order) {\n  if (!reserveStock(order.item)) return { status: 409, error: 'out_of_stock' };\n  const payment = await charge(order.total);\n  if (!payment.accepted) {"
+                  },
+                  {
+                    "path": "src/services.js",
+                    "startLine": 9,
+                    "endLine": 9,
+                    "excerpt": "export async function charge(amount) { return { accepted: amount <= 100 }; }"
+                  }
+                ]
+              },
+              {
+                "id": "src/orders.js::checkout->src/services.js::saveOrder",
+                "type": "relationship",
+                "title": "傳入設定 state 的訂單淺拷貝",
+                "description": "checkout 呼叫匯入的 saveOrder，傳入以物件展開建立、將 state 設為 'paid' 的訂單物件；訂單物件組裝屬於協調端，追加記錄屬於 saveOrder。",
+                "from": "src/orders.js::checkout",
+                "to": "src/services.js::saveOrder",
+                "evidence": [
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 1,
+                    "endLine": 1,
+                    "excerpt": "import { reserveStock, releaseStock, charge, saveOrder } from './services.js';"
+                  },
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 9,
+                    "endLine": 9,
+                    "excerpt": "  saveOrder({ ...order, state: 'paid' });"
+                  }
+                ]
+              },
+              {
+                "id": "src/services.js::reserveStock->src/services.js::inventory",
+                "type": "relationship",
+                "title": "讀取並扣減品項數量",
+                "description": "reserveStock 使用 Map.get 查詢數量，使用 Map.set 寫入扣減後的數量。",
+                "from": "src/services.js::reserveStock",
+                "to": "src/services.js::inventory",
+                "evidence": [
+                  {
+                    "path": "src/services.js",
+                    "startLine": 3,
+                    "endLine": 7,
+                    "excerpt": "export function reserveStock(item) {\n  const count = inventory.get(item) || 0;\n  if (!count) return false;\n  inventory.set(item, count - 1); return true;\n}"
+                  }
+                ]
+              },
+              {
+                "id": "src/services.js::releaseStock->src/services.js::inventory",
+                "type": "relationship",
+                "title": "讀取並增加品項數量",
+                "description": "releaseStock 使用 Map.get 與 Map.set，將指定品項的數量增加一。",
+                "from": "src/services.js::releaseStock",
+                "to": "src/services.js::inventory",
+                "evidence": [
+                  {
+                    "path": "src/services.js",
+                    "startLine": 8,
+                    "endLine": 8,
+                    "excerpt": "export function releaseStock(item) { inventory.set(item, (inventory.get(item) || 0) + 1); }"
+                  }
+                ]
+              },
+              {
+                "id": "src/services.js::saveOrder->src/services.js::orders",
+                "type": "relationship",
+                "title": "追加訂單物件參照",
+                "description": "saveOrder 直接呼叫 orders.push(order)，儲存操作使用記憶體陣列介面，未包含資料庫或檔案寫入。",
+                "from": "src/services.js::saveOrder",
+                "to": "src/services.js::orders",
+                "evidence": [
+                  {
+                    "path": "src/services.js",
+                    "startLine": 10,
+                    "endLine": 10,
+                    "excerpt": "export function saveOrder(order) { orders.push(order); }"
+                  }
+                ]
+              }
+            ]
+          },
+          "uncertainty": "提供的檔案未包含 checkout 呼叫端、應用啟動程式、傳輸介面或部署設定，無法確認執行宿主、程序配置及跨實例資料共享方式。docs/checkout.md 提供協調契約與付款替身說明，未定義額外儲存或外部傳輸介面，因此不另提整合或部署視圖。level 依指定格式保留 Container，不代表套用 C4 層級或獨立部署邊界。",
+          "status": "proposed"
+        }
+      ],
+      "gaps": [
+        "索引未提供 src/orders.js::checkout 的呼叫端或應用啟動程式，無法確定實際入口接線與執行宿主。",
+        "缺少程序、部署與執行個體設定，無法確定記憶體資料的實際生命週期或跨實例共享方式；目前僅能確認模組層級所有權。"
+      ]
+    }
+  ],
+  "coverage": {
+    "indexed": 6,
+    "excluded": 0,
+    "read": [
+      {
+        "path": "README.md",
+        "sha256": "abc02c7caf8134d5944ee6a7ae2a60d6c9d56742d0b2bd4564ee881b226a6eec"
+      },
+      {
+        "path": "src/session.js",
+        "sha256": "7cf49d1e415ac23f1385584051504fc11aa402d66ba0772842b0ed335b0ee935"
+      },
+      {
+        "path": "src/users.js",
+        "sha256": "5fdf40806b496c5f5f9c79d57ee3423f647cbc35c1e0dc9675aa8ea8659aef41"
+      },
+      {
+        "path": "src/orders.js",
+        "sha256": "c4ab4796260d39ff36fd1605767bc32669f3dd96e2402a4bbfe83fec08618e5e"
+      },
+      {
+        "path": "src/services.js",
+        "sha256": "7b9832fa24c31918f8fa12d383292541920fb875022dfa72a58f995c1774733f"
+      },
+      {
+        "path": "docs/checkout.md",
+        "sha256": "9d92d7a55a9c1f97843f191d763912d5007932fb039779967de16350e5009cda"
+      }
+    ],
+    "omitted": []
+  }
+}

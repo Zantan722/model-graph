@@ -1,0 +1,908 @@
+{
+  "version": 2,
+  "diagram": "sequence",
+  "level": "Container",
+  "prompt": "分析登入及訂單，列出有來源的不同呼叫情境。先整理说明，不產圖。",
+  "snapshotAvailable": true,
+  "id": "c890542e-0653-43e5-ad7b-6508fad1e1a9",
+  "createdAt": "2026-09-13T16:15:48.245Z",
+  "project": "thematic-repo",
+  "title": "Shop example：登入與訂單呼叫情境調查",
+  "summary": "依 README.md 概覽與 repository index，調查使用者登入與訂單結帳兩項能力，先整理有來源的呼叫情境，不產圖。後續將沿入口、callee 與相關文件追查參與者、訊息順序、條件分支及回傳，附上來源位置；不以檔名推定呼叫順序。索引未列出測試檔，測試覆蓋需另行確認。登入接受與拒絕、付款成功與拒絕將分別核實，僅將有證據支持的情境列為確定流程。",
+  "status": "awaiting_selection",
+  "themes": [
+    {
+      "id": "theme-1",
+      "title": "登入驗證與 session 回傳",
+      "question": "從 src/session.js 的登入入口追蹤至實際 callee：使用者如何查找、密碼如何驗證，接受與拒絕時分別有哪些依序呼叫及回傳？程式與可找到的測試是否支持各情境？",
+      "rationale": "README.md 明確指出只有驗證接受才回傳 session；需獨立追查驗證分支與回傳行為，避免將拒絕情境混入成功流程。",
+      "paths": [
+        "README.md",
+        "src/session.js",
+        "src/users.js"
+      ],
+      "status": "described",
+      "views": [
+        {
+          "id": "theme-1-view-1",
+          "title": "查無使用者：短路拒絕登入",
+          "summary": "呈現 login 查找不到使用者後，略過密碼驗證與 session 建立，直接回傳拒絕物件的順序。",
+          "purpose": "查無使用者時，哪些呼叫會執行、哪些會略過，最後回傳什麼？",
+          "scope": "包含呼叫端、login、findUser 與模組內 users 陣列的查找及回傳；呼叫端僅作為邊界，不包含路由、HTTP 傳送或訂單流程。",
+          "diagram": "sequence",
+          "level": "Container",
+          "content": {
+            "kind": "scenario",
+            "items": [
+              {
+                "id": "login.user_missing.entry",
+                "type": "step",
+                "title": "呼叫端進入 login",
+                "description": "呼叫端傳入 email 與 password；此情境的 email 不等於固定使用者的 demo@example.test。",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 2,
+                    "endLine": 3,
+                    "excerpt": "export function login(email, password) {\n  const user = findUser(email);"
+                  },
+                  {
+                    "path": "src/users.js",
+                    "startLine": 1,
+                    "endLine": 1,
+                    "excerpt": "const users = [{ id: 'u1', email: 'demo@example.test', password: 'example-only' }];"
+                  }
+                ]
+              },
+              {
+                "id": "login.user_missing.find_user",
+                "type": "step",
+                "title": "login 呼叫 findUser(email)",
+                "description": "login 同步呼叫從 ./users.js 匯入的 findUser。",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 1,
+                    "endLine": 3,
+                    "excerpt": "import { findUser, matchesPassword, issueSession } from './users.js';\nexport function login(email, password) {\n  const user = findUser(email);"
+                  }
+                ]
+              },
+              {
+                "id": "login.user_missing.array_lookup",
+                "type": "step",
+                "title": "findUser 呼叫 users.find",
+                "description": "users.find 執行比較函式，以 user.email === email 在模組內固定陣列查找。",
+                "evidence": [
+                  {
+                    "path": "src/users.js",
+                    "startLine": 1,
+                    "endLine": 2,
+                    "excerpt": "const users = [{ id: 'u1', email: 'demo@example.test', password: 'example-only' }];\nexport function findUser(email) { return users.find(user => user.email === email); }"
+                  }
+                ]
+              },
+              {
+                "id": "login.user_missing.lookup_return",
+                "type": "step",
+                "title": "查找結果依序回傳 undefined",
+                "description": "沒有符合項目，users.find 回傳 undefined；findUser 將結果回傳給 login，存入 user。",
+                "evidence": [
+                  {
+                    "path": "src/users.js",
+                    "startLine": 2,
+                    "endLine": 2,
+                    "excerpt": "export function findUser(email) { return users.find(user => user.email === email); }"
+                  },
+                  {
+                    "path": "src/session.js",
+                    "startLine": 3,
+                    "endLine": 3,
+                    "excerpt": "  const user = findUser(email);"
+                  }
+                ]
+              },
+              {
+                "id": "login.user_missing.short_circuit",
+                "type": "step",
+                "title": "login 短路略過密碼驗證",
+                "description": "!user 為 true，|| 右側的 matchesPassword(user, password) 不執行，拒絕條件成立。",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 4,
+                    "endLine": 4,
+                    "excerpt": "  if (!user || !matchesPassword(user, password)) return { status: 401, error: 'invalid_credentials' };"
+                  }
+                ]
+              },
+              {
+                "id": "login.user_missing.reject_return",
+                "type": "step",
+                "title": "login 向呼叫端回傳拒絕物件",
+                "description": "回傳 {status:401,error:'invalid_credentials'} 並結束函式，不會呼叫 issueSession。",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 4,
+                    "endLine": 5,
+                    "excerpt": "  if (!user || !matchesPassword(user, password)) return { status: 401, error: 'invalid_credentials' };\n  return { status: 200, session: issueSession(user.id) };"
+                  }
+                ]
+              }
+            ]
+          },
+          "trigger": "呼叫 login(email, password)，email 不符合 users 陣列中的使用者。",
+          "uncertainty": "所附程式支持此短路分支，但提供的證據沒有測試檔案或搜尋結果，無法確認測試是否存在、覆蓋此情境或通過。外部呼叫端未提供；401 僅能確認為回傳物件欄位。",
+          "status": "ready",
+          "source": "@startuml\n' @modelgraph {\"version\":1,\"diagram\":\"sequence\",\"level\":\"Container\"}\n\nactor \"呼叫端（情境邊界）\" as caller\nparticipant \"login\" as login\nparticipant \"findUser\" as findUser\nparticipant \"users（模組內陣列）\" as users\n\nnote right of caller : 假設：呼叫 login(email, password)，email 不等於 demo@example.test；外部呼叫端實作未提供。\nnote right of login : src/session.js:1-5\nnote right of findUser : src/users.js:2\nnote right of users : src/users.js:1；唯一使用者 email 為 demo@example.test。\n\ncaller -> login : 1. login(email, password)\nlogin -> findUser : 2. findUser(email)\nfindUser -> users : 3. users.find(user => user.email === email)\nusers --> findUser : 4. undefined（無符合項目）\nfindUser --> login : 5. undefined，存入 user\nnote right of login : src/session.js:4：!user 為 true，|| 短路；matchesPassword(user, password) 不執行。\nlogin --> caller : 6. 回傳 { status: 401, error: 'invalid_credentials' }\nnote right of login : src/session.js:4-5：提前 return，issueSession(user.id) 不執行；401 僅為回傳物件欄位。\nnote right of caller : 證據不足：未提供測試檔案或搜尋結果，無法確認此情境的測試是否存在、覆蓋或通過。\n@enduml",
+          "warnings": []
+        },
+        {
+          "id": "theme-1-view-2",
+          "title": "使用者存在但密碼不符：驗證後拒絕",
+          "summary": "呈現查找使用者成功後，matchesPassword 直接比較密碼並回傳 false，促使 login 提前拒絕的呼叫順序。",
+          "purpose": "找到使用者後如何驗證密碼，驗證失敗時依序回傳什麼？",
+          "scope": "包含呼叫端、login、findUser、users.find 與 matchesPassword，追蹤至拒絕物件回傳；不包含路由、HTTP 傳送或訂單流程。",
+          "diagram": "sequence",
+          "level": "Container",
+          "content": {
+            "kind": "scenario",
+            "items": [
+              {
+                "id": "login.password_mismatch.entry",
+                "type": "step",
+                "title": "呼叫端進入 login",
+                "description": "傳入固定使用者的 email 與不符的 password，開始登入驗證。",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 2,
+                    "endLine": 3,
+                    "excerpt": "export function login(email, password) {\n  const user = findUser(email);"
+                  },
+                  {
+                    "path": "src/users.js",
+                    "startLine": 1,
+                    "endLine": 1,
+                    "excerpt": "const users = [{ id: 'u1', email: 'demo@example.test', password: 'example-only' }];"
+                  }
+                ]
+              },
+              {
+                "id": "login.password_mismatch.find_user",
+                "type": "step",
+                "title": "login 呼叫 findUser，後者呼叫 users.find",
+                "description": "login 呼叫從 ./users.js 匯入的 findUser(email)；findUser 再呼叫 users.find，以 user.email === email 找到 id 為 u1 的使用者。",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 1,
+                    "endLine": 3,
+                    "excerpt": "import { findUser, matchesPassword, issueSession } from './users.js';\nexport function login(email, password) {\n  const user = findUser(email);"
+                  },
+                  {
+                    "path": "src/users.js",
+                    "startLine": 1,
+                    "endLine": 2,
+                    "excerpt": "const users = [{ id: 'u1', email: 'demo@example.test', password: 'example-only' }];\nexport function findUser(email) { return users.find(user => user.email === email); }"
+                  }
+                ]
+              },
+              {
+                "id": "login.password_mismatch.user_return",
+                "type": "step",
+                "title": "使用者物件依序回傳至 login",
+                "description": "users.find 回傳符合的使用者物件給 findUser，findUser 再回傳給 login，存入 user。",
+                "evidence": [
+                  {
+                    "path": "src/users.js",
+                    "startLine": 2,
+                    "endLine": 2,
+                    "excerpt": "export function findUser(email) { return users.find(user => user.email === email); }"
+                  },
+                  {
+                    "path": "src/session.js",
+                    "startLine": 3,
+                    "endLine": 3,
+                    "excerpt": "  const user = findUser(email);"
+                  }
+                ]
+              },
+              {
+                "id": "login.password_mismatch.verify",
+                "type": "step",
+                "title": "login 呼叫 matchesPassword(user, password)",
+                "description": "user 存在，因此繼續執行從 ./users.js 匯入的 matchesPassword；實際函式直接比較 user.password === password。",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 1,
+                    "endLine": 4,
+                    "excerpt": "import { findUser, matchesPassword, issueSession } from './users.js';\nexport function login(email, password) {\n  const user = findUser(email);\n  if (!user || !matchesPassword(user, password)) return { status: 401, error: 'invalid_credentials' };"
+                  },
+                  {
+                    "path": "src/users.js",
+                    "startLine": 3,
+                    "endLine": 3,
+                    "excerpt": "export function matchesPassword(user, password) { return user.password === password; }"
+                  }
+                ]
+              },
+              {
+                "id": "login.password_mismatch.verify_return",
+                "type": "step",
+                "title": "matchesPassword 回傳 false",
+                "description": "輸入密碼與保存的密碼不嚴格相等，回傳 false 給 login；login 對結果取反，拒絕條件成立。",
+                "evidence": [
+                  {
+                    "path": "src/users.js",
+                    "startLine": 3,
+                    "endLine": 3,
+                    "excerpt": "export function matchesPassword(user, password) { return user.password === password; }"
+                  },
+                  {
+                    "path": "src/session.js",
+                    "startLine": 4,
+                    "endLine": 4,
+                    "excerpt": "  if (!user || !matchesPassword(user, password)) return { status: 401, error: 'invalid_credentials' };"
+                  }
+                ]
+              },
+              {
+                "id": "login.password_mismatch.reject_return",
+                "type": "step",
+                "title": "login 向呼叫端回傳拒絕物件",
+                "description": "回傳 {status:401,error:'invalid_credentials'} 並提前結束，不呼叫 issueSession。",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 4,
+                    "endLine": 5,
+                    "excerpt": "  if (!user || !matchesPassword(user, password)) return { status: 401, error: 'invalid_credentials' };\n  return { status: 200, session: issueSession(user.id) };"
+                  }
+                ]
+              }
+            ]
+          },
+          "trigger": "呼叫 login，email 為 demo@example.test，password 與字串 example-only 不嚴格相等。",
+          "uncertainty": "所附程式支持密碼不符的拒絕分支，但提供的證據沒有測試檔案或搜尋結果，無法確認測試是否存在、覆蓋此情境或通過。401 僅能確認為回傳物件欄位，未提供 HTTP 回應實作。",
+          "status": "proposed"
+        },
+        {
+          "id": "theme-1-view-3",
+          "title": "登入接受：建立並回傳 session",
+          "summary": "呈現使用者查找與密碼比較成功後，login 呼叫 issueSession，取得 session 物件並回傳成功結果的完整順序。",
+          "purpose": "登入接受時，session 由誰建立、包含什麼，如何回傳至呼叫端？",
+          "scope": "包含呼叫端、login、findUser、users.find、matchesPassword 與 issueSession，追蹤至成功物件回傳；排除 session 後續使用、到期處理、路由與訂單流程。",
+          "diagram": "sequence",
+          "level": "Container",
+          "content": {
+            "kind": "scenario",
+            "items": [
+              {
+                "id": "login.accepted.entry",
+                "type": "step",
+                "title": "呼叫端傳入符合的登入資料",
+                "description": "呼叫端以固定使用者的 email 與 password 進入 login。",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 2,
+                    "endLine": 3,
+                    "excerpt": "export function login(email, password) {\n  const user = findUser(email);"
+                  },
+                  {
+                    "path": "src/users.js",
+                    "startLine": 1,
+                    "endLine": 1,
+                    "excerpt": "const users = [{ id: 'u1', email: 'demo@example.test', password: 'example-only' }];"
+                  }
+                ]
+              },
+              {
+                "id": "login.accepted.find_user",
+                "type": "step",
+                "title": "login 呼叫 findUser，後者呼叫 users.find",
+                "description": "login 呼叫從 ./users.js 匯入的 findUser(email)；findUser 再以 users.find 執行 user.email === email 比較，在固定陣列找到使用者 u1。",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 1,
+                    "endLine": 3,
+                    "excerpt": "import { findUser, matchesPassword, issueSession } from './users.js';\nexport function login(email, password) {\n  const user = findUser(email);"
+                  },
+                  {
+                    "path": "src/users.js",
+                    "startLine": 1,
+                    "endLine": 2,
+                    "excerpt": "const users = [{ id: 'u1', email: 'demo@example.test', password: 'example-only' }];\nexport function findUser(email) { return users.find(user => user.email === email); }"
+                  }
+                ]
+              },
+              {
+                "id": "login.accepted.user_return",
+                "type": "step",
+                "title": "使用者物件依序回傳至 login",
+                "description": "users.find 回傳符合的使用者給 findUser，再由 findUser 回傳給 login，存入 user。",
+                "evidence": [
+                  {
+                    "path": "src/users.js",
+                    "startLine": 2,
+                    "endLine": 2,
+                    "excerpt": "export function findUser(email) { return users.find(user => user.email === email); }"
+                  },
+                  {
+                    "path": "src/session.js",
+                    "startLine": 3,
+                    "endLine": 3,
+                    "excerpt": "  const user = findUser(email);"
+                  }
+                ]
+              },
+              {
+                "id": "login.accepted.verify",
+                "type": "step",
+                "title": "login 呼叫 matchesPassword(user, password)",
+                "description": "user 存在，因此執行從 ./users.js 匯入的 matchesPassword，以 user.password === password 直接比較密碼。",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 1,
+                    "endLine": 4,
+                    "excerpt": "import { findUser, matchesPassword, issueSession } from './users.js';\nexport function login(email, password) {\n  const user = findUser(email);\n  if (!user || !matchesPassword(user, password)) return { status: 401, error: 'invalid_credentials' };"
+                  },
+                  {
+                    "path": "src/users.js",
+                    "startLine": 3,
+                    "endLine": 3,
+                    "excerpt": "export function matchesPassword(user, password) { return user.password === password; }"
+                  }
+                ]
+              },
+              {
+                "id": "login.accepted.verify_return",
+                "type": "step",
+                "title": "matchesPassword 回傳 true",
+                "description": "密碼嚴格相等，回傳 true 給 login；拒絕條件不成立，繼續執行成功回傳敘述。",
+                "evidence": [
+                  {
+                    "path": "src/users.js",
+                    "startLine": 3,
+                    "endLine": 3,
+                    "excerpt": "export function matchesPassword(user, password) { return user.password === password; }"
+                  },
+                  {
+                    "path": "src/session.js",
+                    "startLine": 4,
+                    "endLine": 5,
+                    "excerpt": "  if (!user || !matchesPassword(user, password)) return { status: 401, error: 'invalid_credentials' };\n  return { status: 200, session: issueSession(user.id) };"
+                  }
+                ]
+              },
+              {
+                "id": "login.accepted.issue_session",
+                "type": "step",
+                "title": "login 呼叫 issueSession('u1')",
+                "description": "login 將 user.id 傳給從 ./users.js 匯入的 issueSession，求得成功物件的 session 欄位值。",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 1,
+                    "endLine": 5,
+                    "excerpt": "import { findUser, matchesPassword, issueSession } from './users.js';\nexport function login(email, password) {\n  const user = findUser(email);\n  if (!user || !matchesPassword(user, password)) return { status: 401, error: 'invalid_credentials' };\n  return { status: 200, session: issueSession(user.id) };"
+                  },
+                  {
+                    "path": "src/users.js",
+                    "startLine": 1,
+                    "endLine": 1,
+                    "excerpt": "const users = [{ id: 'u1', email: 'demo@example.test', password: 'example-only' }];"
+                  }
+                ]
+              },
+              {
+                "id": "login.accepted.session_return",
+                "type": "step",
+                "title": "issueSession 建立並回傳 session",
+                "description": "issueSession 建立 {userId:'u1',expiresIn:3600} 並回傳給 login；函式內沒有持久化呼叫。",
+                "evidence": [
+                  {
+                    "path": "src/users.js",
+                    "startLine": 4,
+                    "endLine": 4,
+                    "excerpt": "export function issueSession(id) { return { userId: id, expiresIn: 3600 }; }"
+                  }
+                ]
+              },
+              {
+                "id": "login.accepted.success_return",
+                "type": "step",
+                "title": "login 向呼叫端回傳成功物件",
+                "description": "取得 issueSession 的回傳值後，回傳 {status:200,session:{userId:'u1',expiresIn:3600}}。",
+                "evidence": [
+                  {
+                    "path": "src/session.js",
+                    "startLine": 5,
+                    "endLine": 5,
+                    "excerpt": "  return { status: 200, session: issueSession(user.id) };"
+                  },
+                  {
+                    "path": "src/users.js",
+                    "startLine": 1,
+                    "endLine": 4,
+                    "excerpt": "const users = [{ id: 'u1', email: 'demo@example.test', password: 'example-only' }];\nexport function findUser(email) { return users.find(user => user.email === email); }\nexport function matchesPassword(user, password) { return user.password === password; }\nexport function issueSession(id) { return { userId: id, expiresIn: 3600 }; }"
+                  }
+                ]
+              }
+            ]
+          },
+          "trigger": "呼叫 login('demo@example.test', 'example-only')。",
+          "uncertainty": "所附程式支持接受後回傳 session，但提供的證據沒有測試檔案或搜尋結果，無法確認測試是否存在、覆蓋此情境或通過。200 僅能確認為回傳物件欄位；expiresIn 的單位、到期執行機制與 session 後續使用未提供。",
+          "status": "proposed"
+        }
+      ],
+      "gaps": [
+        "未找到登入相關測試，無法確認上述情境是否有自動化測試或測試執行結果。",
+        "未找到 login 的外部呼叫端，追蹤範圍止於 login 入口及其實際 callee，無法延伸至路由或 HTTP 回應。"
+      ]
+    },
+    {
+      "id": "theme-2",
+      "title": "結帳付款成功與訂單記錄",
+      "question": "從 src/orders.js 追蹤結帳入口及實際服務呼叫：庫存保留、付款與已付款訂單記錄的參與者、呼叫順序及回傳為何？docs/checkout.md、實作與可找到的測試是否一致？",
+      "rationale": "README.md 描述結帳涉及庫存、付款與訂單記錄，需建立成功情境的完整來源鏈，作為訂單概覽與細節說明的共同依據。",
+      "paths": [
+        "README.md",
+        "src/orders.js",
+        "src/services.js",
+        "docs/checkout.md"
+      ],
+      "status": "described",
+      "views": [
+        {
+          "id": "theme-2-view-1",
+          "title": "結帳付款成功並記錄已付款訂單",
+          "summary": "追蹤 checkout 依序保留庫存、等待付款、記錄已付款訂單並回傳成功結果。成功路徑與文件一致；提供的證據未包含測試，無法核對測試行為。",
+          "purpose": "結帳成功時，各參與者依什麼順序呼叫與回傳，如何建立已付款訂單？",
+          "scope": "包含呼叫者、checkout、reserveStock、charge、saveOrder、inventory Map 與 orders 陣列。限定庫存充足且付款接受的情境；排除登入、庫存不足、付款拒絕後的庫存釋放，以及未有證據的路由、UI、外部付款閘道與資料庫。",
+          "diagram": "sequence",
+          "level": "Container",
+          "content": {
+            "kind": "scenario",
+            "items": [
+              {
+                "id": "checkout.invoke",
+                "type": "step",
+                "title": "呼叫者進入 checkout(order)",
+                "description": "呼叫者傳入訂單，執行匯出的 async checkout；呼叫結果為 Promise。提供的證據未指出具體呼叫端。",
+                "evidence": [
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 1,
+                    "endLine": 3,
+                    "excerpt": "import { reserveStock, releaseStock, charge, saveOrder } from './services.js';\nexport async function checkout(order) {\n  if (!reserveStock(order.item)) return { status: 409, error: 'out_of_stock' };"
+                  }
+                ]
+              },
+              {
+                "id": "checkout.reserveStock.call",
+                "type": "step",
+                "title": "checkout 同步呼叫 reserveStock(order.item)",
+                "description": "checkout 先呼叫 services.js 的 reserveStock，取得布林結果後才繼續付款，符合文件要求的先保留、再付款順序。",
+                "evidence": [
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 1,
+                    "endLine": 4,
+                    "excerpt": "import { reserveStock, releaseStock, charge, saveOrder } from './services.js';\nexport async function checkout(order) {\n  if (!reserveStock(order.item)) return { status: 409, error: 'out_of_stock' };\n  const payment = await charge(order.total);"
+                  },
+                  {
+                    "path": "docs/checkout.md",
+                    "startLine": 2,
+                    "endLine": 2,
+                    "excerpt": "Reserve before charging. A declined payment restores reserved stock."
+                  }
+                ]
+              },
+              {
+                "id": "reserveStock.inventory.return_true",
+                "type": "step",
+                "title": "reserveStock 讀取並扣減庫存，回傳 true",
+                "description": "reserveStock 呼叫 inventory.get(item) 取得數量；此成功情境接著呼叫 inventory.set(item, count - 1)，再向 checkout 回傳 true。Map 初始含 book:2，呼叫時的數量則取決於先前操作。",
+                "evidence": [
+                  {
+                    "path": "src/services.js",
+                    "startLine": 1,
+                    "endLine": 7,
+                    "excerpt": "const inventory = new Map([['book', 2]]);\nexport const orders = [];\nexport function reserveStock(item) {\n  const count = inventory.get(item) || 0;\n  if (!count) return false;\n  inventory.set(item, count - 1); return true;\n}"
+                  }
+                ]
+              },
+              {
+                "id": "checkout.charge.call",
+                "type": "step",
+                "title": "checkout 呼叫並等待 charge(order.total)",
+                "description": "庫存保留成功後，checkout 將總額傳給 charge，透過 await 取得付款結果，再檢查 payment.accepted。",
+                "evidence": [
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 3,
+                    "endLine": 5,
+                    "excerpt": "  if (!reserveStock(order.item)) return { status: 409, error: 'out_of_stock' };\n  const payment = await charge(order.total);\n  if (!payment.accepted) {"
+                  }
+                ]
+              },
+              {
+                "id": "charge.return_accepted",
+                "type": "step",
+                "title": "charge 的 Promise 解析為 {accepted:true}",
+                "description": "本地 async charge 以 amount <= 100 計算 accepted；此情境向 checkout 提供 {accepted:true}。函式未呼叫外部付款服務，與文件所述的確定性 stub 一致。",
+                "evidence": [
+                  {
+                    "path": "src/services.js",
+                    "startLine": 9,
+                    "endLine": 9,
+                    "excerpt": "export async function charge(amount) { return { accepted: amount <= 100 }; }"
+                  },
+                  {
+                    "path": "docs/checkout.md",
+                    "startLine": 4,
+                    "endLine": 4,
+                    "excerpt": "The payment service in this example is a deterministic stub, not a real gateway."
+                  }
+                ]
+              },
+              {
+                "id": "checkout.saveOrder.call",
+                "type": "step",
+                "title": "checkout 呼叫 saveOrder({...order,state:'paid'})",
+                "description": "payment.accepted 為 true，checkout 略過拒付分支，複製原訂單欄位並將 state 設為 'paid'，同步傳給 saveOrder。此順序符合文件所述付款成功才建立已付款訂單。",
+                "evidence": [
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 4,
+                    "endLine": 9,
+                    "excerpt": "  const payment = await charge(order.total);\n  if (!payment.accepted) {\n    releaseStock(order.item);\n    return { status: 402, error: 'payment_declined' };\n  }\n  saveOrder({ ...order, state: 'paid' });"
+                  },
+                  {
+                    "path": "docs/checkout.md",
+                    "startLine": 3,
+                    "endLine": 3,
+                    "excerpt": "Only a successful charge creates a paid order."
+                  }
+                ]
+              },
+              {
+                "id": "saveOrder.orders.return",
+                "type": "step",
+                "title": "saveOrder 寫入 orders 並回傳 undefined",
+                "description": "saveOrder 呼叫 orders.push(order)，將已付款訂單加入初始為空的記憶體陣列。saveOrder 未明示 return，因此向 checkout 回傳 undefined。",
+                "evidence": [
+                  {
+                    "path": "src/services.js",
+                    "startLine": 2,
+                    "endLine": 2,
+                    "excerpt": "export const orders = [];"
+                  },
+                  {
+                    "path": "src/services.js",
+                    "startLine": 10,
+                    "endLine": 10,
+                    "excerpt": "export function saveOrder(order) { orders.push(order); }"
+                  }
+                ]
+              },
+              {
+                "id": "checkout.return_paid",
+                "type": "step",
+                "title": "checkout 向呼叫者提供成功結果",
+                "description": "saveOrder 完成後，checkout 回傳 {status:201,state:'paid'}，使其 Promise 解析為此物件；結果未包含完整訂單。",
+                "evidence": [
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 2,
+                    "endLine": 2,
+                    "excerpt": "export async function checkout(order) {"
+                  },
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 9,
+                    "endLine": 11,
+                    "excerpt": "  saveOrder({ ...order, state: 'paid' });\n  return { status: 201, state: 'paid' };\n}"
+                  }
+                ]
+              }
+            ]
+          },
+          "trigger": "呼叫者執行 checkout(order)，order.item 的現有庫存大於零，且 order.total 使 amount <= 100 判斷成立。",
+          "uncertainty": "提供的證據沒有 checkout 的具體呼叫端或測試內容，無法確認上游入口、測試是否存在或是否涵蓋成功路徑。可確認 docs/checkout.md 關於先保留再付款、成功後記錄已付款訂單及確定性付款 stub 的敘述與實作一致；拒付後釋放庫存不在本視圖核對範圍。",
+          "status": "proposed"
+        }
+      ],
+      "gaps": [
+        "未找到 checkout 的實際呼叫端，無法追蹤更上游的 HTTP 路由或介面入口。",
+        "提供的索引與搜尋結果中沒有測試，無法判定測試與文件、實作是否一致。"
+      ]
+    },
+    {
+      "id": "theme-3",
+      "title": "付款拒絕後的庫存釋放",
+      "question": "付款拒絕如何傳回結帳流程，又如何觸發庫存釋放？追查此分支的有序訊息、最終回傳及是否記錄訂單，並核對文件與可找到的測試；其他失敗分支僅在有明確證據時另列。",
+      "rationale": "README.md 明確指出付款拒絕會釋放庫存，這是具有補償操作的獨立情境，須與付款成功分開核實。",
+      "paths": [
+        "README.md",
+        "src/orders.js",
+        "src/services.js",
+        "docs/checkout.md"
+      ],
+      "status": "described",
+      "views": [
+        {
+          "id": "theme-3-view-1",
+          "title": "付款拒絕傳回結帳並釋放庫存",
+          "summary": "追蹤預留庫存、付款拒絕結果傳回、結帳觸發庫存釋放及最終拒付回傳的順序。此分支不新增訂單，符合提供的文件契約。",
+          "purpose": "付款拒絕如何傳回 checkout，又如何觸發庫存釋放；呼叫端最後收到什麼，是否記錄訂單？",
+          "scope": "包含抽象呼叫端、checkout、reserveStock、charge、releaseStock 與記憶體 inventory Map；說明 saveOrder 未執行的原因。排除登入、付款成功細節、外部付款閘道及未有證據的例外處理。",
+          "diagram": "sequence",
+          "level": "Container",
+          "content": {
+            "kind": "scenario",
+            "items": [
+              {
+                "id": "payment_declined.checkout.call",
+                "type": "step",
+                "title": "呼叫端進入 checkout(order)",
+                "description": "呼叫端傳入訂單，進入 async checkout；最終結果由其 Promise 提供。呼叫端僅表示函式入口邊界。",
+                "evidence": [
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 2,
+                    "endLine": 4,
+                    "excerpt": "export async function checkout(order) {\n  if (!reserveStock(order.item)) return { status: 409, error: 'out_of_stock' };\n  const payment = await charge(order.total);"
+                  }
+                ]
+              },
+              {
+                "id": "payment_declined.reserveStock.call",
+                "type": "step",
+                "title": "checkout 同步呼叫 reserveStock(order.item)",
+                "description": "checkout 先預留庫存，取得結果後才會呼叫付款函式，符合文件的先預留再付款順序。",
+                "evidence": [
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 1,
+                    "endLine": 4,
+                    "excerpt": "import { reserveStock, releaseStock, charge, saveOrder } from './services.js';\nexport async function checkout(order) {\n  if (!reserveStock(order.item)) return { status: 409, error: 'out_of_stock' };\n  const payment = await charge(order.total);"
+                  },
+                  {
+                    "path": "docs/checkout.md",
+                    "startLine": 2,
+                    "endLine": 2,
+                    "excerpt": "Reserve before charging. A declined payment restores reserved stock."
+                  }
+                ]
+              },
+              {
+                "id": "payment_declined.reserveStock.return",
+                "type": "step",
+                "title": "reserveStock 扣減庫存並回傳 true",
+                "description": "reserveStock 以 inventory.get(item) 讀取數量；此情境庫存充足，因此執行 inventory.set(item, count - 1)，再回傳 true 給 checkout。",
+                "evidence": [
+                  {
+                    "path": "src/services.js",
+                    "startLine": 3,
+                    "endLine": 7,
+                    "excerpt": "export function reserveStock(item) {\n  const count = inventory.get(item) || 0;\n  if (!count) return false;\n  inventory.set(item, count - 1); return true;\n}"
+                  }
+                ]
+              },
+              {
+                "id": "payment_declined.charge.call",
+                "type": "step",
+                "title": "checkout 呼叫並等待 charge(order.total)",
+                "description": "預留成功後，checkout 將訂單總額傳给 charge，透過 await 等待付款結果。",
+                "evidence": [
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 3,
+                    "endLine": 5,
+                    "excerpt": "  if (!reserveStock(order.item)) return { status: 409, error: 'out_of_stock' };\n  const payment = await charge(order.total);\n  if (!payment.accepted) {"
+                  }
+                ]
+              },
+              {
+                "id": "payment_declined.charge.return",
+                "type": "step",
+                "title": "charge 的 Promise 解析為拒絕結果",
+                "description": "本地 async charge 以 amount <= 100 計算 accepted；本情境總額大於 100，因此 Promise 解析為 {accepted:false}，由 checkout 存入 payment。這是正常解析的結果物件，不是 Promise 拒絕；文件確認付款函式為確定性 stub。",
+                "evidence": [
+                  {
+                    "path": "src/services.js",
+                    "startLine": 9,
+                    "endLine": 9,
+                    "excerpt": "export async function charge(amount) { return { accepted: amount <= 100 }; }"
+                  },
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 4,
+                    "endLine": 5,
+                    "excerpt": "  const payment = await charge(order.total);\n  if (!payment.accepted) {"
+                  },
+                  {
+                    "path": "docs/checkout.md",
+                    "startLine": 4,
+                    "endLine": 4,
+                    "excerpt": "The payment service in this example is a deterministic stub, not a real gateway."
+                  }
+                ]
+              },
+              {
+                "id": "payment_declined.releaseStock.call",
+                "type": "step",
+                "title": "checkout 判斷拒付並呼叫 releaseStock",
+                "description": "checkout 判斷 !payment.accepted 成立，主動同步呼叫 releaseStock(order.item)，觸發先前預留庫存的釋放。",
+                "evidence": [
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 5,
+                    "endLine": 7,
+                    "excerpt": "  if (!payment.accepted) {\n    releaseStock(order.item);\n    return { status: 402, error: 'payment_declined' };"
+                  },
+                  {
+                    "path": "docs/checkout.md",
+                    "startLine": 2,
+                    "endLine": 2,
+                    "excerpt": "Reserve before charging. A declined payment restores reserved stock."
+                  }
+                ]
+              },
+              {
+                "id": "payment_declined.releaseStock.return",
+                "type": "step",
+                "title": "releaseStock 加回一件庫存並返回",
+                "description": "releaseStock 先以 inventory.get(item) 取得目前數量，再以 inventory.set 將數量加 1。函式沒有明示 return，隱含回傳 undefined，控制權回到 checkout。",
+                "evidence": [
+                  {
+                    "path": "src/services.js",
+                    "startLine": 8,
+                    "endLine": 8,
+                    "excerpt": "export function releaseStock(item) { inventory.set(item, (inventory.get(item) || 0) + 1); }"
+                  },
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 6,
+                    "endLine": 7,
+                    "excerpt": "    releaseStock(order.item);\n    return { status: 402, error: 'payment_declined' };"
+                  }
+                ]
+              },
+              {
+                "id": "payment_declined.checkout.return",
+                "type": "step",
+                "title": "checkout 回傳拒付結果，不新增訂單",
+                "description": "庫存釋放完成後，checkout 提前回傳，使其 Promise 解析為 {status:402,error:'payment_declined'}。後方 saveOrder 不執行，因此此分支不向 orders 陣列新增訂單，符合文件所述只有付款成功才建立已付款訂單。",
+                "evidence": [
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 6,
+                    "endLine": 10,
+                    "excerpt": "    releaseStock(order.item);\n    return { status: 402, error: 'payment_declined' };\n  }\n  saveOrder({ ...order, state: 'paid' });\n  return { status: 201, state: 'paid' };"
+                  },
+                  {
+                    "path": "src/services.js",
+                    "startLine": 10,
+                    "endLine": 10,
+                    "excerpt": "export function saveOrder(order) { orders.push(order); }"
+                  },
+                  {
+                    "path": "docs/checkout.md",
+                    "startLine": 3,
+                    "endLine": 3,
+                    "excerpt": "Only a successful charge creates a paid order."
+                  }
+                ]
+              }
+            ]
+          },
+          "trigger": "呼叫端呼叫 checkout(order)，品項庫存充足，且 order.total 為大於 100 的數值。",
+          "uncertainty": "提供的證據未包含測試，無法核對測試斷言或執行結果。README.md 第 4 行及 docs/checkout.md 與此分支一致。未提供具體呼叫端或 HTTP 整合，402 僅能確認為結果物件欄位；亦無付款拋錯或庫存釋放失敗的處理證據。",
+          "status": "proposed"
+        },
+        {
+          "id": "theme-3-view-2",
+          "title": "庫存不足時在付款前結束結帳",
+          "summary": "獨立呈現程式明確支持的另一失敗分支：預留失敗直接回傳 409，尚未呼叫付款，也不執行庫存釋放或訂單記錄。",
+          "purpose": "庫存預留失敗時，checkout 如何回傳，為何不會進入付款拒絕後的庫存釋放流程？",
+          "scope": "包含抽象呼叫端、checkout、reserveStock 與 inventory Map，限於品項不存在或庫存為 0 的情境。排除付款拒絕補償、付款成功及登入流程。",
+          "diagram": "sequence",
+          "level": "Container",
+          "content": {
+            "kind": "scenario",
+            "items": [
+              {
+                "id": "out_of_stock.checkout.call",
+                "type": "step",
+                "title": "checkout 接收訂單並呼叫 reserveStock",
+                "description": "呼叫端進入 async checkout(order)；checkout 首先同步呼叫 reserveStock(order.item)。",
+                "evidence": [
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 2,
+                    "endLine": 3,
+                    "excerpt": "export async function checkout(order) {\n  if (!reserveStock(order.item)) return { status: 409, error: 'out_of_stock' };"
+                  }
+                ]
+              },
+              {
+                "id": "out_of_stock.reserveStock.return",
+                "type": "step",
+                "title": "reserveStock 讀取庫存並回傳 false",
+                "description": "reserveStock 呼叫 inventory.get(item)，不存在的品項以 0 處理。數量為 0 時立即回傳 false 給 checkout，不執行後方的庫存扣減。",
+                "evidence": [
+                  {
+                    "path": "src/services.js",
+                    "startLine": 3,
+                    "endLine": 7,
+                    "excerpt": "export function reserveStock(item) {\n  const count = inventory.get(item) || 0;\n  if (!count) return false;\n  inventory.set(item, count - 1); return true;\n}"
+                  }
+                ]
+              },
+              {
+                "id": "out_of_stock.checkout.return",
+                "type": "step",
+                "title": "checkout 回傳庫存不足結果並結束",
+                "description": "checkout 收到 false 後提前回傳，其 Promise 解析為 {status:409,error:'out_of_stock'}。後方 charge、releaseStock 與 saveOrder 均不執行。",
+                "evidence": [
+                  {
+                    "path": "src/orders.js",
+                    "startLine": 2,
+                    "endLine": 10,
+                    "excerpt": "export async function checkout(order) {\n  if (!reserveStock(order.item)) return { status: 409, error: 'out_of_stock' };\n  const payment = await charge(order.total);\n  if (!payment.accepted) {\n    releaseStock(order.item);\n    return { status: 402, error: 'payment_declined' };\n  }\n  saveOrder({ ...order, state: 'paid' });\n  return { status: 201, state: 'paid' };"
+                  }
+                ]
+              }
+            ]
+          },
+          "trigger": "呼叫端呼叫 checkout(order)，但 order.item 不存在於 inventory，或其庫存為 0。",
+          "uncertainty": "提供的證據未包含測試或具體呼叫端，無法核對測試或 HTTP 回應。文件規定先預留再付款，但未明列庫存不足的 409 結果；此結果由程式直接佐證。",
+          "status": "proposed"
+        }
+      ],
+      "gaps": [
+        "未找到 checkout 的具體呼叫端、HTTP 整合或回應轉換；sequence 起點只能標示抽象呼叫端。",
+        "提供的索引與搜尋結果未呈現測試，無法核對測試斷言或執行結果。"
+      ]
+    }
+  ],
+  "coverage": {
+    "indexed": 6,
+    "excluded": 0,
+    "read": [
+      {
+        "path": "README.md",
+        "sha256": "abc02c7caf8134d5944ee6a7ae2a60d6c9d56742d0b2bd4564ee881b226a6eec"
+      },
+      {
+        "path": "src/session.js",
+        "sha256": "7cf49d1e415ac23f1385584051504fc11aa402d66ba0772842b0ed335b0ee935"
+      },
+      {
+        "path": "src/users.js",
+        "sha256": "5fdf40806b496c5f5f9c79d57ee3423f647cbc35c1e0dc9675aa8ea8659aef41"
+      },
+      {
+        "path": "src/orders.js",
+        "sha256": "c4ab4796260d39ff36fd1605767bc32669f3dd96e2402a4bbfe83fec08618e5e"
+      },
+      {
+        "path": "src/services.js",
+        "sha256": "7b9832fa24c31918f8fa12d383292541920fb875022dfa72a58f995c1774733f"
+      },
+      {
+        "path": "docs/checkout.md",
+        "sha256": "9d92d7a55a9c1f97843f191d763912d5007932fb039779967de16350e5009cda"
+      }
+    ],
+    "omitted": []
+  }
+}

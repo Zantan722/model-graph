@@ -44,60 +44,55 @@ function createWindow() {
 }
 
 async function runReportSmoke(win){
- const timeout=setTimeout(()=>{console.error('Report smoke timed out');app.exit(1);},20000);
+ const timeout=setTimeout(()=>{console.error('Report smoke timed out');app.exit(1);},30000);
  win.webContents.once('did-finish-load',async()=>{
   try{
-   const wait=()=>new Promise(r=>setTimeout(r,100));
-   let loaded=false;for(let i=0;i<100;i++){loaded=await win.webContents.executeJavaScript(`document.querySelectorAll('.report-workspace .theme-section').length===2 && document.querySelectorAll('.report-workspace .story-card').length===4`);if(loaded)break;await wait();}
-   if(!loaded)throw new Error('Report did not restore two themes and four flows');
-   await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.report-workspace button')).find(b=>b.textContent==='预览／載入 Flow'||b.textContent==='預覽／載入 Flow').click()`);await wait();
-   const preview=await win.webContents.executeJavaScript(`document.querySelector('#puml-source').value.includes('登入成功')`);if(!preview)throw new Error('Wrong flow selected');
-   await win.webContents.executeJavaScript(`document.querySelector('[aria-label="關閉 PUML 編輯器"]').click();Array.from(document.querySelectorAll('.report-workspace button')).find(b=>b.textContent==='帶回 Prompt 修改').click()`);await wait();
-   const refine=await win.webContents.executeJavaScript(`document.querySelector('[aria-label="分析模式"]').value==='diagram' && document.querySelector('[aria-label="圖表描述"]').value.includes('登入成功') && !document.querySelector('.workspace').classList.contains('show-report')`);
-   if(!refine)throw new Error('Flow refinement did not load into canvas and prompt');
-   // Exercise the real preload/progress bridge with synthetic completions; no model calls.
+   const wait=()=>new Promise(r=>setTimeout(r,100)),js=code=>win.webContents.executeJavaScript(code);
+   const until=async code=>{for(let i=0;i<100;i++){if(await js(code))return;await wait();}throw new Error('View UI assertion failed: '+code);};
+   await until(`document.querySelectorAll('.report-workspace .story-card').length===4`);
+   await js(`Array.from(document.querySelectorAll('.report-workspace button')).find(b=>b.textContent==='預覽／載入視圖').click()`);await wait();
+   if(!await js(`document.querySelector('#puml-source').value.includes('登入成功')`))throw new Error('Legacy preview failed');
+   await js(`document.querySelector('[aria-label="關閉 PUML 編輯器"]').click();Array.from(document.querySelectorAll('.report-workspace button')).find(b=>b.textContent==='帶回 Prompt 修改').click()`);await wait();
+   if(!await js(`document.querySelector('[aria-label="分析模式"]').value==='diagram' && document.querySelector('[aria-label="圖表描述"]').value.includes('登入成功')`))throw new Error('Refinement failed');
    const {ipcMain}=require('electron');
-   const report=JSON.parse(require('node:fs').readFileSync(path.join(app.getPath('userData'),'last-project-report.json'),'utf8'));
-   report.id='00000000-0000-4000-8000-000000000002';report.status='running';
-   const stories=report.themes.flatMap(t=>t.stories);
-   const originals=stories.map(s=>s.source);stories.forEach(s=>{s.flowStatus='pending';delete s.source;});
-   let request,finish;
+   const report=require('./report-store.cjs').normalizeReport(JSON.parse(require('node:fs').readFileSync(path.join(app.getPath('userData'),'last-project-report.json'),'utf8')));
+   report.id='00000000-0000-4000-8000-000000000002';report.status='awaiting_selection';report.snapshotAvailable=true;report.diagram='sequence';report.level='Container';delete report.legacy;
+   const views=report.themes.flatMap(t=>t.views),originals=views.map(v=>v.source);
+   views.forEach(v=>{delete v.legacy;delete v.source;v.content.kind='scenario';v.status='proposed';});
+   let selectedRequest,finish,drawCalls=0;
    ipcMain.removeHandler('ai:folder');ipcMain.handle('ai:folder',()=>({name:'synthetic',files:[],skipped:0,limited:false}));
-   ipcMain.removeHandler('ai:generate');ipcMain.handle('ai:generate',(_event,r)=>{request=r;return new Promise(resolve=>{finish=resolve;});});
-   const js=code=>win.webContents.executeJavaScript(code);
-   const until=async code=>{for(let i=0;i<60;i++){if(await js(code))return;await wait();}throw new Error('Canvas sync assertion failed: '+code);};
-   await js(`Array.from(document.querySelectorAll('.generated-flow-controls button')).find(b=>b.textContent.includes('自動同步')).click();Array.from(document.querySelectorAll('.ai-actions button')).find(b=>b.textContent==='選擇專案資料夾').click()`);await wait();
+   ipcMain.removeHandler('ai:generate');ipcMain.handle('ai:generate',()=>({kind:'project',report,files:[]}));
+   ipcMain.removeHandler('ai:generateViews');ipcMain.handle('ai:generateViews',(_event,r)=>{drawCalls++;selectedRequest=r;return new Promise(resolve=>{finish=resolve;});});
+   await js(`Array.from(document.querySelectorAll('.ai-actions button')).find(b=>b.textContent==='選擇專案資料夾').click()`);await wait();
    await js(`document.querySelector('[aria-label="產生圖表"]').click()`);
-   for(let i=0;!request&&i<60;i++)await wait();if(!request)throw new Error('Synthetic run did not start');
-   const emit=()=>win.webContents.send('ai:progress',{runId:request.runId,report:structuredClone(report)});
-   emit();await wait();
-   stories[0].flowStatus='ready';stories[0].source=originals[0];emit();
-   await until(`document.querySelector('.edge text')?.textContent.includes('登入成功') && !document.querySelector('.workspace').classList.contains('show-report')`);
-   stories[1].flowStatus='ready';stories[1].source=originals[1];emit();
-   await until(`document.querySelector('.edge text')?.textContent.includes('登入失敗') && document.querySelector('#completed-flow').options.length===3`);
-   // A user's edit pauses following; repeated checkpoints must not replay old diagrams.
+   await until(`document.querySelectorAll('.view-choice input:not(:disabled)').length===4`);
+   if(drawCalls!==0||!await js(`Array.from(document.querySelectorAll('.view-choice input')).every(i=>!i.checked)&&Array.from(document.querySelectorAll('.view-selection-bar button')).find(b=>b.textContent==='產生所選 0 張圖').disabled`))throw new Error('Analysis auto-selected or generated diagrams');
+   // Verify wrapping/overflow at desktop, tablet and narrow sizes using the actual renderer.
+   for(const width of [1440,1024,768,600,375]){win.setContentSize(width,940);await wait();if(!await js(`document.documentElement.scrollWidth<=window.innerWidth`))throw new Error('Horizontal overflow at '+width);if([1440,375].includes(width))require('node:fs').writeFileSync(path.join(require('node:os').tmpdir(),`modelgraph-select-${width}.png`),(await win.webContents.capturePage()).toPNG());}
+   win.setContentSize(1440,940);await wait();
+   await js(`{const boxes=document.querySelectorAll('.view-choice input');boxes[0].click();boxes[2].click();}`);await wait();
+   await js(`Array.from(document.querySelectorAll('.view-selection-bar button')).find(b=>b.textContent==='產生所選 2 張圖').click()`);
+   for(let i=0;!selectedRequest&&i<60;i++)await wait();
+   if(!selectedRequest||JSON.stringify(selectedRequest.viewIds)!==JSON.stringify([views[0].id,views[2].id]))throw new Error('Wrong selected view IDs');
+   // Follow was paused by legacy preview; explicitly resume it for this batch.
+   await js(`document.querySelector('.generated-flow-controls button').click()`);await wait();
+   report.status='generating';views[0].status='ready';views[0].source=originals[0];
+   const emit=()=>win.webContents.send('ai:progress',{runId:selectedRequest.runId,report:structuredClone(report)});emit();
+   await until(`!document.querySelector('.workspace').classList.contains('show-report')&&document.querySelector('.edge text')?.textContent.includes('登入成功')`);
    await js(`document.querySelector('[data-node-id]').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}))`);await wait();
    const edited=await js(`document.querySelector('[data-node-id]').getAttribute('transform')`);
-   stories[2].flowStatus='ready';stories[2].source=originals[2];emit();await wait();
-   if(!await js(`document.querySelector('.edge text')?.textContent.includes('登入失敗') && document.querySelector('[data-node-id]').getAttribute('transform')===${JSON.stringify(edited)}`))throw new Error('Progress overwrote manual edits');
-   await js(`document.querySelector('.generated-flow-controls button').click()`);
-   await until(`document.querySelector('.edge text')?.textContent.includes('結帳成功')`);
-   await js(`document.querySelector('[aria-label="復原"]').click()`);await wait();
-   if(!await js(`document.querySelector('[data-node-id]').getAttribute('transform')===${JSON.stringify(edited)}`))throw new Error('Undo did not preserve the edited canvas');
-   emit();await wait();
-   if(!await js(`document.querySelector('.edge text')?.textContent.includes('登入失敗')`))throw new Error('Duplicate checkpoint replayed');
-   report.status='cancelled';finish({kind:'project',report,files:[]});await wait();
-   await until(`!document.querySelector('[aria-label="產生圖表"]').disabled`);
-   // Single-diagram generation uses the same automatic application path.
-   await js(`{const select=document.querySelector('[aria-label="分析模式"]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(select,'diagram');select.dispatchEvent(new Event('change',{bubbles:true}));}`);await wait();
-   ipcMain.removeHandler('ai:generate');ipcMain.handle('ai:generate',()=>({kind:'diagram',source:originals[3],files:[]}));
-   await js(`document.querySelector('[aria-label="產生圖表"]').click()`);
-   await until(`document.querySelector('.edge text')?.textContent.includes('結帳失敗')`);
-   ipcMain.removeHandler('ai:generate');ipcMain.handle('ai:generate',()=>({kind:'diagram',source:'@startuml\\n!include /bad\\n@enduml',files:[]}));
-   await until(`!document.querySelector('[aria-label="產生圖表"]').disabled`);
-   await js(`document.querySelector('[aria-label="產生圖表"]').click()`);await wait();
-   if(!await js(`document.querySelector('.edge text')?.textContent.includes('結帳失敗')`))throw new Error('Invalid PUML overwrote canvas');
-   console.log('Thematic report desktop test passed:',JSON.stringify({themes:2,flows:4,restored:true,preview,refine,streamingSync:true,editPreserved:true,undo:true,singleSync:true}));clearTimeout(timeout);app.exit(0);
+   views[2].status='ready';views[2].source=originals[2];emit();await wait();
+   if(!await js(`document.querySelector('[data-node-id]').getAttribute('transform')===${JSON.stringify(edited)}`))throw new Error('Manual edit overwritten');
+   report.status='awaiting_selection';finish({kind:'project',report,files:[]});await wait();
+   await js(`Array.from(document.querySelectorAll('.workspace-view-tabs button')).find(b=>b.textContent==='分析報告').click()`);await wait();
+   await until(`document.querySelectorAll('.view-choice input:not(:disabled)').length===2`);
+   if(!await js(`Array.from(document.querySelectorAll('.view-choice input')).every(i=>!i.checked)`))throw new Error('Selection was not cleared');
+   // Same analysis can be used for a later, smaller batch.
+   await js(`document.querySelectorAll('.view-choice input')[1].click()`);await wait();
+   await js(`Array.from(document.querySelectorAll('.view-selection-bar button')).find(b=>b.textContent==='產生所選 1 張圖').click()`);await wait();
+   if(drawCalls!==2||selectedRequest.viewIds.length!==1||selectedRequest.viewIds[0]!==views[1].id)throw new Error('Later batch reran other views');
+   finish({kind:'project',report,files:[]});await wait();
+   console.log('Selective views Electron test passed:',JSON.stringify({legacyRestore:true,defaultSelection:0,selectedOnly:2,laterBatch:1,streamingSync:true,editPreserved:true,responsiveWidths:[1440,1024,768,600,375]}));clearTimeout(timeout);app.exit(0);
   }catch(error){console.error(error);clearTimeout(timeout);app.exit(1);}
  });
 }

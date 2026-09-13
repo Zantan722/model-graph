@@ -13,6 +13,8 @@ files:
   - stories.cjs
   - repo-analysis.cjs
   - report-store.cjs
+  - views.cjs
+  - generate-views.cjs
   - diagram-parser.cjs
   - renderer/**/*
   - package.json
