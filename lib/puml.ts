@@ -14,6 +14,7 @@ export function exportPuml(graph: Graph, diagram: DiagramType, level='Container'
  parseGraph(graph);
  const aliases=new Map(graph.nodes.map((n,i)=>[n.id,`mg_${i}`]));
  const lines=['@startuml',`' @modelgraph ${JSON.stringify({version:1,diagram,level})}`];
+ if(graph.evidence?.length)for(const evidence of graph.evidence)lines.push(`' @modelgraph-evidence ${JSON.stringify(evidence)}`);
  if(diagram==='c4'&&level!=='Code')lines.push('!include <C4/C4_Component>');
  if(diagram!=='sequence'&&diagram!=='c4')lines.push('left to right direction');
  if(diagram==='workflow')lines.push("' Workflow exported as an explicit state graph to preserve arbitrary branches and loops.");
@@ -88,6 +89,7 @@ export function importPuml(source: string, preferred: DiagramType|'auto'='auto')
   if(/^@enduml$/i.test(line)){if(!active)fail(at,'缺少 @startuml');active=false;finished=true;continue;}
   if(line.startsWith("'")){
    try{
+    const evidence=line.match(/^' @modelgraph-evidence (.+)$/);if(evidence){(graph.evidence??=[]).push(JSON.parse(evidence[1]));continue;}
     let m=line.match(/^' @modelgraph-node (\S+) (.+)$/);if(m){nodeMeta.set(m[1],JSON.parse(m[2]));continue;}
     m=line.match(/^' @modelgraph-edge (.+)$/);if(m){const parsed=JSON.parse(m[1]);if(!parsed||typeof parsed!=='object')throw new Error();edgeMeta=parsed;continue;}
     m=line.match(/^' @modelgraph-note (.+)$/);if(m){const parsed=JSON.parse(m[1]);if(!parsed||typeof parsed!=='object')throw new Error();noteMeta=parsed;continue;}

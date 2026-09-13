@@ -1,5 +1,9 @@
 const {contextBridge,ipcRenderer}=require('electron');
 contextBridge.exposeInMainWorld('modelGraphAI',{
+ openPuml:()=>ipcRenderer.invoke('ai:openPuml'),
+ preparePuml:request=>ipcRenderer.invoke('ai:preparePuml',request),
+ savePuml:token=>ipcRenderer.invoke('ai:savePuml',token),
+ cancelPuml:token=>ipcRenderer.invoke('ai:cancelPuml',token),
  report:()=>ipcRenderer.invoke('ai:report'),
  onProgress:callback=>{const listener=(_event,value)=>callback(value);ipcRenderer.on('ai:progress',listener);return ()=>ipcRenderer.removeListener('ai:progress',listener);},
  folder:()=>ipcRenderer.invoke('ai:folder'),

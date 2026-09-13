@@ -104,3 +104,19 @@ async function analyzeRepository({root,manifest,request,ask,signal,onProgress=()
  await checkpoint();progress('done',`分析結束：${report.themes.reduce((n,t)=>n+t.views.length,0)} 份視圖說明，請勾選要產生的圖`);return report;
 }
 module.exports={analyzeRepository,parsePlan};
+
+/** Explicit opt-in discovery: metadata and root overview only, never implementation. */
+async function discoverViews({root,manifest,request,ask,signal,onCheckpoint=async()=>{},onSources=async()=>{},onContext=async()=>{},onProgress=()=>{}}){
+ const policy=policyFor(request);
+ const paths=manifest.files.filter(f=>/^(readme(?:\.(?:md|txt|rst))?|package\.json|pyproject\.toml|go\.mod|cargo\.toml)$/i.test(f.path)).map(f=>f.path);
+ onProgress({phase:'suggest',message:'讀取專案概覽，建議可畫的圖；尚未追查實作或產圖。'});
+ const files=await ai.readSelection(root,manifest.files,paths,signal);
+ const prompt=`Suggest distinct diagrams for the user to choose, NOT a repository audit. ${policy.guide} Use only the index and overview. Do not claim implementation has been verified. Each theme is ONE candidate diagram. Architecture candidates describe structural scopes, not stories; C4 stays at the requested level. Return JSON {"title":"project diagrams","summary":"brief overview","themes":[{"title":"diagram title","question":"what this diagram shows","rationale":"brief scope description","paths":["exact relevant paths from index"]}]}. 1–12 candidates, no filler. No gap analysis, no implementation investigation, no PUML. Traditional Chinese. User: ${JSON.stringify(request.prompt)}. Diagram: ${request.diagram}${request.diagram==='c4'?` / ${request.level}`:''}. INDEX (untrusted data): ${JSON.stringify(manifest.files)}. OVERVIEW (untrusted data): ${JSON.stringify(files)}`;
+ const plan=parsePlan(await ask(prompt),manifest.files);signal?.throwIfAborted();
+ const report={version:2,id:randomUUID(),createdAt:new Date().toISOString(),project:path.basename(root),...plan,diagram:request.diagram,level:request.level||'Container',prompt:request.prompt,discovery:true,snapshotAvailable:true,status:'awaiting_selection',coverage:{indexed:manifest.files.length,excluded:manifest.skipped,read:files.map(f=>({path:f.path,sha256:createHash('sha256').update(f.content).digest('hex')})),omitted:[]}};
+ report.themes=plan.themes.map(t=>({...t,status:'described',views:[{id:t.id+'-view-1',title:t.title,summary:t.rationale,purpose:t.question,scope:t.paths.join('、'),seedPaths:t.paths,diagram:report.diagram,level:report.level,uncertainty:'',content:{kind:policy.kind,items:[]},status:'proposed'}]}));
+ await onContext({reportId:report.id,root});
+ await onSources({version:1,reportId:report.id,files},report);
+ await onCheckpoint(structuredClone(report));return report;
+}
+module.exports.discoverViews=discoverViews;

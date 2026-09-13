@@ -4,12 +4,12 @@ const parser=require('../desktop-app/diagram-parser.cjs');
 (async()=>{
  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'modelgraph-selected-ipc-'));
  const handlers=new Map(),frame={url:'modelgraph://app/'},events=[];const win={isDestroyed:()=>false,webContents:{mainFrame:frame,send:(_name,e)=>events.push(e)}};
- const event={sender:win.webContents,senderFrame:frame};let modelCalls=0,lastInput='';
+ const event={sender:win.webContents,senderFrame:frame};let modelCalls=0,lastInput='',discoveryMode=false;const reads=[];
  const realLoad=Module._load;
  Module._load=function(name,...args){
   if(name==='electron')return {app:{getPath:()=>directory},ipcMain:{handle:(n,fn)=>handlers.set(n,fn)},dialog:{}};
   if(name==='./diagram-parser.cjs')return parser;
-  if(name==='./ai.cjs')return {...actualAI,discover:async()=>'/fake/codex',generationArgs:()=>[],run:async(_e,_a,input)=>{modelCalls++;lastInput=input;return '@startuml\ncomponent A\ncomponent B\nA --> B : imports\n@enduml';}};
+  if(name==='./ai.cjs')return {...actualAI,discover:async()=>'/fake/codex',generationArgs:()=>[],readSelection:async(...args)=>{reads.push(...args[2]);return actualAI.readSelection(...args);},run:async(_e,_a,input)=>{modelCalls++;lastInput=input;if(discoveryMode&&input.startsWith('Select only files'))return JSON.stringify(['src/session.js']);return '@startuml\ncomponent A\ncomponent B\nA --> B : imports\n@enduml';}};
   return realLoad.call(this,name,...args);
  };
  try{
@@ -31,6 +31,12 @@ const parser=require('../desktop-app/diagram-parser.cjs');
   await invoke(payload);assert.equal(modelCalls,1,'already generated views are not rerun');
   const other=structuredClone(report);other.id='00000000-0000-4000-8000-000000000012';await store.saveReport(directory,other);
   await assert.rejects(invoke({...payload,reportId:other.id}),/快照/);assert.equal(modelCalls,1);
+  const discovery=structuredClone(report);discovery.id='00000000-0000-4000-8000-000000000013';discovery.discovery=true;
+  await store.saveReport(directory,discovery);await store.saveSources(directory,{reportId:discovery.id,files},discovery);
+  await store.saveContext(directory,{reportId:discovery.id,root:await fs.realpath('tests/fixtures/thematic-repo')});
+  discoveryMode=true;const before=modelCalls;
+  const discovered=await invoke({...payload,reportId:discovery.id,root:'/etc',files:['/etc/passwd']});
+  assert.equal(modelCalls-before,2);assert.deepEqual(reads,['src/session.js']);assert.equal(discovered.report.themes[0].views[0].status,'ready');assert.deepEqual(discovered.files,['src/session.js']);assert.ok(!lastInput.includes('/etc/passwd'));
   console.log('Selected-view IPC validates sender/IDs, uses native snapshots, ignores client sources, checkpoints and skips ready views.');
  }finally{Module._load=realLoad;await fs.rm(directory,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1;});

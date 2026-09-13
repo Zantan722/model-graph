@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';import {build} from 'esbuild';import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url),ai=require('../desktop/ai.cjs');
+const code=await build({stdin:{contents:`export * from './lib/scoped-edit';export * from './lib/diagram-drafts';export * from './lib/puml';export * from './lib/graph';`,resolveDir:process.cwd()},bundle:true,format:'esm',platform:'node',write:false});
+const {mergeScopedEdit,initialGraph,exportPuml,importPuml,withDrafts,loadDrafts}=await import('data:text/javascript;base64,'+Buffer.from(code.outputFiles[0].text).toString('base64'));
+const original=initialGraph('architecture'),incoming=structuredClone(original);incoming.nodes.forEach(n=>{n.name+=' changed';n.x=9000;});
+const edited=mergeScopedEdit(original,incoming,'n1');assert.equal(edited.nodes[1].name,incoming.nodes[1].name);assert.equal(edited.nodes[1].x,original.nodes[1].x);assert.deepEqual(edited.nodes[0],original.nodes[0]);assert.deepEqual(edited.edges.find(e=>e.id==='e3'),original.edges.find(e=>e.id==='e3'));
+const seq=initialGraph('sequence'),changedSeq=structuredClone(seq);changedSeq.edges[0].label='changed';const seqResult=mergeScopedEdit(seq,changedSeq,seq.edges[0].id);assert.equal(seqResult.edges[0].label,'changed');assert.deepEqual(seqResult.edges.slice(1),seq.edges.slice(1));
+assert.throws(()=>mergeScopedEdit(original,incoming,'missing'));
+const report={id:'r',themes:[{id:'t',views:[{id:'v',source:'old'}]}]},id=JSON.stringify(['r','t','v']),drafts={[id]:{source:exportPuml(edited,'architecture'),versions:[exportPuml(original,'architecture')]}};
+assert.equal(withDrafts(report,drafts).themes[0].views[0].source,drafts[id].source);assert.equal(report.themes[0].views[0].source,'old');assert.deepEqual(loadDrafts(JSON.stringify(drafts)),drafts);
+const raw='@startuml\ncomponent API\n\' @source {"target":"node:API","path":"api.ts","startLine":1,"endLine":1}\n\' @source {"target":"node:API","path":"secret","startLine":1,"endLine":1}\n@enduml';
+const enriched=ai.attachEvidence(raw,[{path:'api.ts',content:'export function login() {}'}]),parsed=importPuml(enriched);
+assert.equal(parsed.graph.evidence.length,1);assert.equal(parsed.graph.evidence[0].excerpt,'export function login() {}');assert.deepEqual(importPuml(exportPuml(parsed.graph,'architecture')).graph.evidence,parsed.graph.evidence);
+console.log('Scoped edits preserve unrelated nodes/layout; current drafts override originals; source citations validate paths/lines and round-trip through PUML.');

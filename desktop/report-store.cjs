@@ -11,6 +11,7 @@ function validateReport(report){
   for(const v of views){
    const items=report.version===1?v?.steps:v?.content?.items;
    if(!v||!text(v.id)||ids.has(v.id)||!text(v.title)||!types.includes(v.diagram)||!Array.isArray(items)||items.some(i=>!i||!text(i.title)||!text(i.description)||!Array.isArray(i.evidence)||i.evidence.some(e=>!e||!text(e.path)||!text(e.excerpt)))||(v.source!==undefined&&!text(v.source)))throw new Error('視圖資料損壞');
+   for(const key of ['seedPaths','sourcePaths'])if(v[key]!==undefined&&(!Array.isArray(v[key])||v[key].some(p=>typeof p!=='string')))throw new Error('圖表來源欄位無效');
    ids.add(v.id);
    if(report.version===2){
     if(!text(v.summary)||!text(v.purpose)||!text(v.scope)||!text(v.uncertainty)||!levels.includes(v.level)||!['proposed','queued','generating','ready','failed'].includes(v.status))throw new Error('視圖欄位無效');
@@ -50,3 +51,16 @@ function validateSources(snapshot,report){
 async function saveSources(directory,snapshot,report){validateSources(snapshot,report);const dir=path.join(directory,'project-sources');await fs.mkdir(dir,{recursive:true});await atomic(path.join(dir,report.id+'.json'),JSON.stringify(snapshot));}
 async function loadSources(directory,report){if(!validId(report.id))throw new Error('報告 ID 無效');try{return validateSources(JSON.parse(await fs.readFile(path.join(directory,'project-sources',report.id+'.json'),'utf8')),report);}catch(error){if(error.code==='ENOENT')throw new Error('找不到來源快照，請重新分析');throw error;}}
 module.exports={saveReport,loadReport,validateReport,normalizeReport,saveSources,loadSources};
+
+async function saveContext(directory,context){
+ if(!validId(context.reportId)||!path.isAbsolute(context.root))throw new Error('資料夾參考無效');
+ const dir=path.join(directory,'project-contexts');await fs.mkdir(dir,{recursive:true});await atomic(path.join(dir,context.reportId+'.json'),JSON.stringify(context));
+}
+async function loadContext(directory,id){
+ if(!validId(id))throw new Error('圖表清單 ID 無效');
+ const value=JSON.parse(await fs.readFile(path.join(directory,'project-contexts',id+'.json'),'utf8'));
+ if(value.reportId!==id||typeof value.root!=='string'||!path.isAbsolute(value.root))throw new Error('資料夾參考無效');
+ if(await fs.realpath(value.root)!==value.root)throw new Error('資料夾位置已變更，請重新選擇資料夾並列出候選圖');
+ return value;
+}
+module.exports.saveContext=saveContext;module.exports.loadContext=loadContext;

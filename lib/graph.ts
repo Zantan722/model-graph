@@ -3,7 +3,8 @@ export type NodeKind = 'person' | 'system' | 'container' | 'component' | 'code' 
 export type GraphNode = { id: string; name: string; description: string; technology: string; kind: NodeKind; x: number; y: number };
 export type Edge = { id: string; source: string; target: string; label: string; messageType?: 'call' | 'return' };
 export type Note = { id: string; nodeId: string; text: string; resolved: boolean };
-export type Graph = { nodes: GraphNode[]; edges: Edge[]; notes: Note[] };
+export type SourceEvidence={target:string;path:string;startLine:number;endLine:number;excerpt:string};
+export type Graph = { evidence?:SourceEvidence[]; nodes: GraphNode[]; edges: Edge[]; notes: Note[] };
 export const uid = () => crypto.randomUUID();
 
 export function initialGraph(level: string): Graph {
@@ -51,7 +52,12 @@ export function parseGraph(value: unknown): Graph {
   if(!object(n)||!id(n.id)||noteIds.has(n.id)||typeof n.nodeId!=='string'||!ids.has(n.nodeId)||!str(n.text,32000)||typeof n.resolved!=='boolean')throw new Error('註解格式不正確或內容超過上限');
   noteIds.add(n.id);return {id:n.id,nodeId:n.nodeId,text:n.text,resolved:n.resolved};
  });
- const result={nodes,edges,notes};
+ const result:Graph={nodes,edges,notes};
+ if(value.evidence!==undefined){
+  if(!Array.isArray(value.evidence)||value.evidence.length>1000)throw new Error('來源摘錄格式錯誤');
+  result.evidence=value.evidence.map(e=>{if(!object(e)||!str(e.target,5000)||!str(e.path,4096)||!str(e.excerpt,16000)||!Number.isInteger(e.startLine)||!Number.isInteger(e.endLine)||(e.startLine as number)<1||(e.endLine as number)<(e.startLine as number))throw new Error('來源摘錄格式錯誤');return {target:e.target,path:e.path,excerpt:e.excerpt,startLine:e.startLine as number,endLine:e.endLine as number};});
+ }
+
  if(JSON.stringify(result).length>1_000_000)throw new Error('圖表內容超過 1 MB 上限');
  return result;
 }

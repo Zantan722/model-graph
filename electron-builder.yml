@@ -15,6 +15,7 @@ files:
   - report-store.cjs
   - views.cjs
   - generate-views.cjs
+  - puml-files.cjs
   - diagram-parser.cjs
   - renderer/**/*
   - package.json

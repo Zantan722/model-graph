@@ -49,11 +49,14 @@ async function runReportSmoke(win){
   try{
    const wait=()=>new Promise(r=>setTimeout(r,100)),js=code=>win.webContents.executeJavaScript(code);
    const until=async code=>{for(let i=0;i<100;i++){if(await js(code))return;await wait();}throw new Error('View UI assertion failed: '+code);};
+   await until(`document.querySelector('.workspace-view-tabs')!==null`);
+   if(await js(`document.querySelector('.workspace').classList.contains('show-report')`))throw new Error('Restored report hijacked canvas');
+   await js(`Array.from(document.querySelectorAll('.workspace-view-tabs button')).find(b=>b.textContent==='圖表清單').click()`);
    await until(`document.querySelectorAll('.report-workspace .story-card').length===4`);
    await js(`Array.from(document.querySelectorAll('.report-workspace button')).find(b=>b.textContent==='預覽／載入視圖').click()`);await wait();
    if(!await js(`document.querySelector('#puml-source').value.includes('登入成功')`))throw new Error('Legacy preview failed');
    await js(`document.querySelector('[aria-label="關閉 PUML 編輯器"]').click();Array.from(document.querySelectorAll('.report-workspace button')).find(b=>b.textContent==='帶回 Prompt 修改').click()`);await wait();
-   if(!await js(`document.querySelector('[aria-label="分析模式"]').value==='diagram' && document.querySelector('[aria-label="圖表描述"]').value.includes('登入成功')`))throw new Error('Refinement failed');
+   if(!await js(`document.querySelector('[aria-label="圖表描述"]').value.includes('登入成功')`))throw new Error('Refinement failed');
    const {ipcMain}=require('electron');
    const report=require('./report-store.cjs').normalizeReport(JSON.parse(require('node:fs').readFileSync(path.join(app.getPath('userData'),'last-project-report.json'),'utf8')));
    report.id='00000000-0000-4000-8000-000000000002';report.status='awaiting_selection';report.snapshotAvailable=true;report.diagram='sequence';report.level='Container';delete report.legacy;
@@ -63,8 +66,8 @@ async function runReportSmoke(win){
    ipcMain.removeHandler('ai:folder');ipcMain.handle('ai:folder',()=>({name:'synthetic',files:[],skipped:0,limited:false}));
    ipcMain.removeHandler('ai:generate');ipcMain.handle('ai:generate',()=>({kind:'project',report,files:[]}));
    ipcMain.removeHandler('ai:generateViews');ipcMain.handle('ai:generateViews',(_event,r)=>{drawCalls++;selectedRequest=r;return new Promise(resolve=>{finish=resolve;});});
-   await js(`Array.from(document.querySelectorAll('.ai-actions button')).find(b=>b.textContent==='選擇專案資料夾').click()`);await wait();
-   await js(`document.querySelector('[aria-label="產生圖表"]').click()`);
+   await js(`Array.from(document.querySelectorAll('.ai-actions button')).find(b=>b.textContent==='選擇參考資料夾（選用）').click()`);await wait();
+   await js(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='先列出候選讓我選').click()`);
    await until(`document.querySelectorAll('.view-choice input:not(:disabled)').length===4`);
    if(drawCalls!==0||!await js(`Array.from(document.querySelectorAll('.view-choice input')).every(i=>!i.checked)&&Array.from(document.querySelectorAll('.view-selection-bar button')).find(b=>b.textContent==='產生所選 0 張圖').disabled`))throw new Error('Analysis auto-selected or generated diagrams');
    // Verify wrapping/overflow at desktop, tablet and narrow sizes using the actual renderer.
@@ -84,7 +87,7 @@ async function runReportSmoke(win){
    views[2].status='ready';views[2].source=originals[2];emit();await wait();
    if(!await js(`document.querySelector('[data-node-id]').getAttribute('transform')===${JSON.stringify(edited)}`))throw new Error('Manual edit overwritten');
    report.status='awaiting_selection';finish({kind:'project',report,files:[]});await wait();
-   await js(`Array.from(document.querySelectorAll('.workspace-view-tabs button')).find(b=>b.textContent==='分析報告').click()`);await wait();
+   await js(`Array.from(document.querySelectorAll('.workspace-view-tabs button')).find(b=>b.textContent==='圖表清單').click()`);await wait();
    await until(`document.querySelectorAll('.view-choice input:not(:disabled)').length===2`);
    if(!await js(`Array.from(document.querySelectorAll('.view-choice input')).every(i=>!i.checked)`))throw new Error('Selection was not cleared');
    // Same analysis can be used for a later, smaller batch.
@@ -92,6 +95,21 @@ async function runReportSmoke(win){
    await js(`Array.from(document.querySelectorAll('.view-selection-bar button')).find(b=>b.textContent==='產生所選 1 張圖').click()`);await wait();
    if(drawCalls!==2||selectedRequest.viewIds.length!==1||selectedRequest.viewIds[0]!==views[1].id)throw new Error('Later batch reran other views');
    finish({kind:'project',report,files:[]});await wait();
+   await js(`Array.from(document.querySelectorAll('.workspace-view-tabs button')).find(b=>b.textContent==='圖表畫布').click()`);await wait();
+   const flowIds=await js(`Array.from(document.querySelector('#completed-flow').options).map(o=>o.value).filter(Boolean)`);
+   for(const id of [flowIds[1],flowIds[0]]){await js(`{const select=document.querySelector('#completed-flow');select.value=${JSON.stringify(id)};select.dispatchEvent(new Event('change',{bubbles:true}));}`);await wait();}
+   if(!await js(`document.querySelector('[data-node-id]').getAttribute('transform')===${JSON.stringify(edited)}`))throw new Error('Edited diagram reverted when switching views');
+   const fileSource=`@startuml\n' original comment\ncomponent "Local API" as api\n@enduml`;let prepared,saves=0;
+   ipcMain.removeHandler('ai:openPuml');ipcMain.handle('ai:openPuml',()=>({id:'test-file',name:'repo.puml',source:fileSource}));
+   ipcMain.removeHandler('ai:preparePuml');ipcMain.handle('ai:preparePuml',(_e,r)=>{prepared=r;return {token:'plan',name:'repo.puml',before:fileSource,after:r.source};});
+   ipcMain.removeHandler('ai:savePuml');ipcMain.handle('ai:savePuml',()=>{saves++;return {id:'saved',name:'repo.puml',source:prepared.source};});
+   await js(`Array.from(document.querySelectorAll('.puml-file-actions button')).find(b=>b.textContent==='開啟 PUML').click()`);await wait();
+   if(!await js(`document.querySelector('#puml-source').value.includes('original comment')`))throw new Error('Native PUML open failed');
+   await js(`document.querySelector('.puml-footer .primary').click()`);await wait();
+   await js(`Array.from(document.querySelectorAll('.puml-file-actions button')).find(b=>b.textContent==='儲存 PUML').click()`);await wait();
+   if(prepared.source!==fileSource||saves!==0)throw new Error('Original PUML text changed or saved before preview');
+   for(const width of [1440,768,375]){win.setContentSize(width,940);await wait();if(!await js(`document.documentElement.scrollWidth<=window.innerWidth`))throw new Error('Save preview overflow');require('node:fs').writeFileSync(path.join(require('node:os').tmpdir(),`modelgraph-save-${width}.png`),(await win.webContents.capturePage()).toPNG());}
+   await js(`Array.from(document.querySelectorAll('dialog button')).find(b=>b.textContent==='確認儲存').click()`);await wait();if(saves!==1)throw new Error('Save confirmation failed');
    console.log('Selective views Electron test passed:',JSON.stringify({legacyRestore:true,defaultSelection:0,selectedOnly:2,laterBatch:1,streamingSync:true,editPreserved:true,responsiveWidths:[1440,1024,768,600,375]}));clearTimeout(timeout);app.exit(0);
   }catch(error){console.error(error);clearTimeout(timeout);app.exit(1);}
  });
@@ -143,7 +161,7 @@ async function runSmoke(win) {
       if(!providerSaved)throw new Error('Provider preference did not persist');
       const redoPreserved=await win.webContents.executeJavaScript(`!document.querySelector('[aria-label="重做"]').disabled`);
       if(!redoPreserved)throw new Error('Selecting a node cleared redo history');
-      const storyMode=await win.webContents.executeJavaScript(`document.querySelector('[aria-label="分析模式"]').querySelector('option[value="project"]')!==null`);
+      const storyMode=await win.webContents.executeJavaScript(`document.querySelector('[aria-label="操作方式"]')===null && !document.querySelector('.provider-settings').open`);
       await win.webContents.executeJavaScript(`(()=>{const select=document.querySelector('[aria-label="Flow 關係"]');select.value=select.options[1].value;select.dispatchEvent(new Event('change',{bubbles:true}));const input=document.querySelector('[aria-label="流程名稱"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'Smoke flow');input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
       await settle();
       await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='保存目前畫布').click()`);
