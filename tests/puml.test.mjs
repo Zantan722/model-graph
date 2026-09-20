@@ -35,3 +35,34 @@ console.log('PUML checks passed: nine round trips, external syntax, branches/loo
 const literal=initialGraph('Container');literal.nodes[0].name='<U+0022> literal';literal.edges[0].label='literal \\n and <U+0041>';assert.deepEqual(importPuml(exportPuml(literal,'c4')).graph,literal);
 assert.doesNotThrow(()=>importPuml("@startuml\n' @modelgraph null\n' @modelgraph-edge null\nA -> B\n' @modelgraph-note null\nnote right of A : test\n@enduml"));
 const reordered=importPuml('@startuml\nA --> DB\ncomponent A\ndatabase DB\n@enduml');assert.equal(reordered.graph.nodes[1].kind,'database');
+
+// Boundaries are visual grouping only: parse through them, keep the contents, never invent a node.
+const boundary=importPuml('@startuml\n!include <C4/C4_Container>\nPerson(user, "User")\nSystem_Boundary(platform, "Platform") {\nContainer(api, "API", "Node.js", "inner")\nContainerDb(db, "DB", "Postgres", "store")\n}\nRel(user, api, "calls")\nRel(api, db, "reads")\n@enduml');
+assert.deepEqual(boundary.errors,[],JSON.stringify(boundary.errors));
+assert.equal(boundary.graph.nodes.length,3,'boundary must not add or drop nodes');
+assert.equal(boundary.graph.edges.length,2,'relations across a boundary must survive');
+assert.ok(boundary.warnings.some(w=>w.line===4&&w.message.includes('邊界群組')),'boundary should warn that the group is not drawn');
+for(const name of ['Enterprise_Boundary','System_Boundary','Container_Boundary','Boundary'])
+ assert.deepEqual(importPuml(`@startuml\n!include <C4/C4_Container>\n${name}(b, "B") {\nPerson(u, "U")\n}\n@enduml`).errors,[],name);
+const nested=importPuml('@startuml\n!include <C4/C4_Container>\nEnterprise_Boundary(e, "E") {\nSystem_Boundary(s, "S") {\nPerson(u, "U")\n}\n}\n@enduml');
+assert.deepEqual(nested.errors,[]);assert.equal(nested.graph.nodes.length,1,'nested boundaries must still yield one node');
+for(const source of ['@startuml\n!include <C4/C4_Container>\nSystem_Boundary(b, "B") {\nPerson(u, "U")\n@enduml','@startuml\n!include <C4/C4_Container>\nPerson(u, "U")\n}\n@enduml'])
+ assert.ok(importPuml(source).errors.length>0,`unbalanced boundary braces should fail: ${source}`);
+console.log('Boundary checks passed: transparent grouping, four macro names, nesting, and unbalanced braces.');
+
+// The rejection must not name a slot the macro does not have, or it sends people back to the same mistake.
+const tooMany=importPuml('@startuml\n!include <C4/C4_Container>\nSystem_Ext(trino, "Trino", "SQL Engine", "preview")\n@enduml');
+assert.equal(tooMany.errors.length,1);
+assert.ok(tooMany.errors[0].message.startsWith('System_Ext'),'message should name the macro');
+assert.ok(tooMany.errors[0].message.includes('技術欄位請改用'),'message should point at the macro that has a technology slot');
+assert.ok(!/位置參數為 alias、名稱、技術/.test(tooMany.errors[0].message),'System_Ext has no technology slot');
+assert.ok(tooMany.errors[0].message.includes('Container_Ext'),'_ext macros should be redirected to Container_Ext');
+assert.ok(importPuml('@startuml\n!include <C4/C4_Container>\nPerson(u, "U", "d", "x")\n@enduml').errors[0].message.includes('Container'),'Person should be redirected to Container');
+assert.ok(/技術/.test(importPuml('@startuml\n!include <C4/C4_Container>\nContainer(a, "A", "T", "D", "e")\n@enduml').errors[0].message),'Container does have a technology slot');
+assert.ok(importPuml('@startuml\n!include <C4/C4_Container>\nContainer(a, "A", "T", $sprite="x")\n@enduml').errors[0].message.includes('具名參數'),'named parameters need their own message');
+// The three-argument form stays valid and keeps the description in the right field.
+const threeArg=importPuml('@startuml\n!include <C4/C4_Container>\nSystem_Ext(trino, "Trino", "SQL Engine")\n@enduml');
+assert.deepEqual(threeArg.errors,[]);
+assert.equal(threeArg.graph.nodes[0].description,'SQL Engine');
+assert.equal(threeArg.graph.nodes[0].technology,'');
+console.log('C4 argument-count messages passed: per-macro slots, redirect target, and named parameters.');

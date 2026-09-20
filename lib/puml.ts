@@ -77,6 +77,7 @@ export function importPuml(source: string, preferred: DiagramType|'auto'='auto')
  let frontier:{node:GraphNode;label:string}[]=[];
  type Branch={kind:'if'|'while';node:GraphNode;yes:{node:GraphNode;label:string}[];hasElse:boolean;line:number};
  const branches:Branch[]=[];
+ const boundaries:number[]=[];
  const step=(name:string,kind:NodeKind)=>{const n=ensure(`activity_${graph.nodes.length}`,kind,quoted(name));for(const f of frontier)addEdge(f.node,n,f.label);frontier=kind==='end'?[]:[{node:n,label:''}];return n;};
  for(let i=0;i<raw.length;i++){
   let line=raw[i].trim();const at=i+1;
@@ -123,12 +124,24 @@ export function importPuml(source: string, preferred: DiagramType|'auto'='auto')
    m=line.match(/^endwhile(?:\s*\((.*)\))?$/i);
    if(m){const b=branches.pop();if(!b||b.kind!=='while')fail(at,'endwhile 找不到對應的 while');else{for(const f of frontier)addEdge(f.node,b.node,f.label);frontier=[{node:b.node,label:m[1]||'no'}];}continue;}
   }
+  // Boundaries group elements visually only; the canvas has no group concept, so parse through them.
+  if(/^(?:(?:Enterprise|System|Container)_)?Boundary\s*\((.*)\)\s*\{$/i.test(line)){
+   const args=splitArgs(line.slice(line.indexOf('(')+1,line.lastIndexOf(')')));
+   if(!args)fail(at,'邊界群組參數引號不完整');
+   else{boundaries.push(at);warn(at,'邊界群組內的元素會保留，但畫布不呈現邊界框，匯出時群組會消失');}
+   continue;
+  }
+  if(/^\}$/.test(line)){if(!boundaries.length)fail(at,'} 找不到對應的邊界群組');else boundaries.pop();continue;}
   const macro=line.match(/^(Person(?:_Ext)?|System(?:Db|_Ext)?|Container(?:Db|_Ext)?|Component(?:Db|_Ext)?|Rel(?:_[LRUD])?)\((.*)\)$/i);
   if(macro){
    const args=splitArgs(macro[2]);if(!args){fail(at,'C4 巨集參數引號不完整');continue;}
    const fn=macro[1].toLowerCase();
    if(fn.startsWith('rel')){if(args.length<3||args.length>4){fail(at,'Rel 目前支援起點、終點、說明與可選技術');continue;}const a=names.get(bare(args[0])),b=names.get(bare(args[1]));if(!a||!b){fail(at,'Rel 的起點或終點尚未宣告');continue;}addEdge(a,b,bare(args[2])+(args[3]?` [${bare(args[3])}]`:''),false,true);}
-   else {const detailed=/^(container|component)/.test(fn);if(args.length<2||args.length>(detailed?4:3)||args.some(a=>/^\$/.test(a))){fail(at,'目前支援 C4 的位置參數：alias、名稱、技術、描述');continue;}const kind:NodeKind=fn.includes('db')?'database':fn.startsWith('person')?'person':fn.startsWith('system')?'system':fn.startsWith('component')?'component':'container';const n=ensure(args[0],kind,args[1]);n.name=bare(args[1]);if(detailed)n.technology=bare(args[2]||'');n.description=bare(args[detailed?3:2]||'');if(fn.endsWith('_ext'))warn(at,'外部元素會保留內容，但目前畫布不呈現 C4 外部樣式');}
+   else {const detailed=/^(container|component)/.test(fn);
+    // Person/System have no technology slot: C4-PlantUML's 4th positional there is $sprite, so saying
+    // otherwise sends people back to the same mistake.
+    if(args.some(a=>/^\$/.test(a))){fail(at,'尚未支援具名參數與變數（$sprite、$tags、$link 等），請只用位置參數');continue;}
+    if(args.length<2||args.length>(detailed?4:3)){fail(at,detailed?`${macro[1]} 的位置參數為 alias、名稱、技術、描述（最多 4 個）`:`${macro[1]} 的位置參數只有 alias、名稱、描述（最多 3 個）；第 4 個位置在 C4-PlantUML 是 $sprite，需要技術欄位請改用 Container${fn.endsWith('_ext')?'_Ext':''}`);continue;}const kind:NodeKind=fn.includes('db')?'database':fn.startsWith('person')?'person':fn.startsWith('system')?'system':fn.startsWith('component')?'component':'container';const n=ensure(args[0],kind,args[1]);n.name=bare(args[1]);if(detailed)n.technology=bare(args[2]||'');n.description=bare(args[detailed?3:2]||'');if(fn.endsWith('_ext'))warn(at,'外部元素會保留內容，但目前畫布不呈現 C4 外部樣式');}
    continue;
   }
   const declaration=line.match(new RegExp(`^(participant|actor|boundary|control|entity|database|collections|queue|component|rectangle|node|cloud|interface|class|state)\\s+(${token})(?:\\s+as\\s+(${token}))?(?:\\s+<<([^>]+)>>)?$`,'iu'));
@@ -155,6 +168,7 @@ export function importPuml(source: string, preferred: DiagramType|'auto'='auto')
  if(blockComment)fail(raw.length,'區塊註解未關閉');
  if(skinDepth)fail(raw.length,'skinparam 區塊未關閉');
  for(const b of branches)fail(b.line,`${b.kind} 區塊未關閉`);
+ for(const at of boundaries)fail(at,'邊界群組未關閉');
  if(!graph.nodes.length&&!errors.length)warn(1,'這是一張空白圖');
  try{const clean=parseGraph(graph);Object.assign(graph,clean);}catch(e){fail(1,(e as Error).message);}
  if(diagram==='workflow'&&!errors.length)warn(1,'匯出將轉為明確的 state 節點／箭頭語法，以保留畫布上的分支與迴圈；不保留原始 activity 排版');
@@ -164,4 +178,31 @@ function splitArgs(input:string):string[]|null {
  const args:string[]=[];let part='',inside=false,escaped=false;
  for(const c of input){if(c==='"'&&!escaped)inside=!inside;if(c===','&&!inside){args.push(part.trim());part='';}else part+=c;if(c==='\\'&&!escaped)escaped=true;else escaped=false;}
  if(inside)return null;args.push(part.trim());return args;
+}
+
+const MACRO_CALL=/^([\p{L}_][\p{L}\p{N}_]*)\((.*)\)(\s*\{)?$/u;
+const RELATION=/^(?:Rel(?:_[LRUD])?\(|.*(?:-{1,2}\[?[#\w]*\]?-{0,2}>{1,2}|<-{1,2}|\.{2,}>))/;
+const isMeta=(line:string)=>/^' @modelgraph/.test(line);
+
+/** Layout only: never reorders or rewrites declarations, so a formatted file parses to the same graph. */
+export function formatPuml(source: string): string {
+ const raw=source.replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n').split('\n').map(l=>l.trim());
+ const out:string[]=[];let depth=0,seenRelation=false,blank=false;
+ const push=(line:string)=>out.push('  '.repeat(Math.max(0,depth))+line);
+ // A @modelgraph comment carries the ids and coordinates of the line below it; a blank must go above the pair.
+ const separate=()=>{let at=out.length;while(at>0&&isMeta(out[at-1].trim()))at--;if(at>0&&out[at-1]!=='')out.splice(at,0,'');};
+ for(const line of raw){
+  if(!line){blank=out.length>0;continue;}
+  const macro=line.match(MACRO_CALL);
+  const body=macro?`${macro[1]}(${(splitArgs(macro[2])??[macro[2]]).join(', ')})${macro[3]?' {':''}`:line;
+  if(/^\}/.test(body))depth--;
+  const relation=RELATION.test(body)&&!isMeta(body)&&!/^\}/.test(body);
+  // Canonical export separates declarations from relations with one blank line; mirror it.
+  if(relation&&!seenRelation&&out.length){separate();blank=false;}
+  else if(blank)separate();
+  blank=false;seenRelation||=relation;
+  push(body);
+  if(/\{$/.test(body))depth++;
+ }
+ return out.join('\n').replace(/\n{3,}/g,'\n\n').replace(/\s+$/,'')+'\n';
 }
