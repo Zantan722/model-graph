@@ -51,7 +51,7 @@ npm run build
 - 套用前顯示辨識類型、節點／關係數、錯誤行號與轉換提醒；有不支援的結構時，不能取代畫布。套用後可復原。
 - 支援 sequence 的 participant／actor 等參與者、正反向訊息與回傳箭頭；component／database／rectangle／cloud 等宣告、別名與有向關係；state 宣告與 `[*]` 起終點；單一節點的行內／多行 note。
 - activity 支援 `start`、`:步驟;`、`stop` / `end`、巢狀 `if (...) then (...) / else (...) / endif`、`while (...) is (...) / endwhile (...)`。
-- C4 支援 Person、System、Container、Component、Db／Ext 常見巨集與 Rel 的位置參數。自訂巨集、命名參數與群組邊界尚未支援。
+- C4 支援 Person、System、Container、Component、Db／Ext 常見巨集與 Rel 的位置參數。`Enterprise_/System_/Container_Boundary` 與 `Boundary` 可解析並保留群組內元素，但畫布不呈現邊界框，重新匯出時群組會消失。自訂巨集與命名參數尚未支援。
 - 圖表類型可自動辨識，也能手動選擇。Data Flow 與一般 Architecture 常共用 PUML 語法，外部資料流檔案可手動指定 Data Flow。
 - 匯出是標準化 PUML；工作流程使用 state 圖語法表示任意分支／迴圈。C4 使用 PlantUML 標準庫的 C4_Component（包含其他 C4 巨集），需使用含 C4 標準庫的 PlantUML。
 - 名稱、箭頭與註解以真正的 PUML 語法輸出；節點座標、編輯器類型、ID 與註解已解決狀態附在 `' @modelgraph-*` 註解中，重新匯入可恢復。修改 PUML 的名称與關係會生效，附加資料不會覆蓋文字中的拓撲。

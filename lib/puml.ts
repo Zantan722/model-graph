@@ -77,6 +77,7 @@ export function importPuml(source: string, preferred: DiagramType|'auto'='auto')
  let frontier:{node:GraphNode;label:string}[]=[];
  type Branch={kind:'if'|'while';node:GraphNode;yes:{node:GraphNode;label:string}[];hasElse:boolean;line:number};
  const branches:Branch[]=[];
+ const boundaries:number[]=[];
  const step=(name:string,kind:NodeKind)=>{const n=ensure(`activity_${graph.nodes.length}`,kind,quoted(name));for(const f of frontier)addEdge(f.node,n,f.label);frontier=kind==='end'?[]:[{node:n,label:''}];return n;};
  for(let i=0;i<raw.length;i++){
   let line=raw[i].trim();const at=i+1;
@@ -123,6 +124,14 @@ export function importPuml(source: string, preferred: DiagramType|'auto'='auto')
    m=line.match(/^endwhile(?:\s*\((.*)\))?$/i);
    if(m){const b=branches.pop();if(!b||b.kind!=='while')fail(at,'endwhile 找不到對應的 while');else{for(const f of frontier)addEdge(f.node,b.node,f.label);frontier=[{node:b.node,label:m[1]||'no'}];}continue;}
   }
+  // Boundaries group elements visually only; the canvas has no group concept, so parse through them.
+  if(/^(?:(?:Enterprise|System|Container)_)?Boundary\s*\((.*)\)\s*\{$/i.test(line)){
+   const args=splitArgs(line.slice(line.indexOf('(')+1,line.lastIndexOf(')')));
+   if(!args)fail(at,'邊界群組參數引號不完整');
+   else{boundaries.push(at);warn(at,'邊界群組內的元素會保留，但畫布不呈現邊界框，匯出時群組會消失');}
+   continue;
+  }
+  if(/^\}$/.test(line)){if(!boundaries.length)fail(at,'} 找不到對應的邊界群組');else boundaries.pop();continue;}
   const macro=line.match(/^(Person(?:_Ext)?|System(?:Db|_Ext)?|Container(?:Db|_Ext)?|Component(?:Db|_Ext)?|Rel(?:_[LRUD])?)\((.*)\)$/i);
   if(macro){
    const args=splitArgs(macro[2]);if(!args){fail(at,'C4 巨集參數引號不完整');continue;}
@@ -155,6 +164,7 @@ export function importPuml(source: string, preferred: DiagramType|'auto'='auto')
  if(blockComment)fail(raw.length,'區塊註解未關閉');
  if(skinDepth)fail(raw.length,'skinparam 區塊未關閉');
  for(const b of branches)fail(b.line,`${b.kind} 區塊未關閉`);
+ for(const at of boundaries)fail(at,'邊界群組未關閉');
  if(!graph.nodes.length&&!errors.length)warn(1,'這是一張空白圖');
  try{const clean=parseGraph(graph);Object.assign(graph,clean);}catch(e){fail(1,(e as Error).message);}
  if(diagram==='workflow'&&!errors.length)warn(1,'匯出將轉為明確的 state 節點／箭頭語法，以保留畫布上的分支與迴圈；不保留原始 activity 排版');
