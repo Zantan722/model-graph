@@ -17,6 +17,8 @@ npm run dev -- --host 127.0.0.1
 - 點選節點或連線，在屬性面板編輯。節點取得鍵盤焦點後，可用方向鍵移動。
 - 選節點後切換「註解」，新增及解決討論。
 - 使用移動畫布、縮放、符合畫面、復原及重做。
+- 頂部「匯出」可存成 PNG、JPG、SVG 或 JSON，桌面版另有「檔案 → 匯出…」與 Cmd/Ctrl+S（PNG）、Cmd/Ctrl+Shift+S（SVG）。圖片匯出整張圖，不受目前縮放與捲動位置影響；PNG／JPG 以 2 倍解析度輸出，JPG 為白底，SVG 保持透明背景。連線圓點與選取、聚焦、滑鼠停留的高亮都不會被匯出。
+- 頂部面板按鈕可分別收合上方工具列、左側助理與右側屬性；「專注模式」（桌面版亦在「檢視」選單）或 Cmd/Ctrl + \ 一次全收，再按一次還原成先前的組合。收合狀態保存在本機，畫布會自動重新符合畫面。
 - 從「圖表類型」切換 Architecture、Workflow、Sequence、Data Flow、Lifecycle 與 C4 Model，每種圖保存獨立畫布。
 - 工作流程支援處理步驟、條件判斷與分支；資料流支援來源、處理、資料庫與目的地；狀態圖支援事件與回到自身的重試轉移。
 - 循序圖以生命線呈現參與者，可左右拖拉，訊息依順序排列；選取訊息可提前／延後、編輯名稱及切換請求／回傳樣式。
@@ -26,7 +28,7 @@ npm run dev -- --host 127.0.0.1
 
 ## 原型範圍
 
-網頁版的本機規則不理解任意自然語言；Electron 桌面版可使用 Claude Code／Codex CLI（見下方說明）。各圖表類型提供可編輯的基礎表示法，尚未提供 Archify 的播放、路徑追蹤、動畫或圖片匯出；循序圖尚無 alt/loop 分組及啟動條。四層視圖目前沒有跨層父子關聯、邊界容器或 C4 語義驗證；Code 是可編輯節點圖，非完整 UML。註解保存在本機，尚未支援多人協作。資料清除前請匯出各層 JSON。
+網頁版的本機規則不理解任意自然語言；Electron 桌面版可使用 Claude Code／Codex CLI（見下方說明）。各圖表類型提供可編輯的基礎表示法，可匯出 PNG／JPG／SVG，但尚未提供 Archify 的播放、路徑追蹤與動畫；循序圖尚無 alt/loop 分組及啟動條。四層視圖目前沒有跨層父子關聯、邊界容器或 C4 語義驗證；Code 是可編輯節點圖，非完整 UML。註解保存在本機，尚未支援多人協作。資料清除前請匯出各層 JSON。
 
 桌面 AI 回傳的 PUML 經解析檢查後才套用並加入復原歷史；來源讀取與 CLI 執行在 Electron 主程序處理。
 
@@ -34,6 +36,7 @@ npm run dev -- --host 127.0.0.1
 
 ```sh
 node tests/graph.test.mjs
+node tests/svg-export.test.mjs
 npx tsc --noEmit
 npm run build
 ```
@@ -88,7 +91,7 @@ npx electron-builder --mac --arm64
 
 目前為未簽署的本機測試版（mac.identity: null），沒有自動更新。要公開提供 macOS 安裝包，應另外設定自己的 Developer ID 簽署與 Apple 公證；Windows 也需另行設定發行者簽署。
 
-桌面版資料存在 Electron 的使用者資料目錄，與瀏覽器的 localStorage 分開；既有網頁圖表請先匯出 PUML／JSON，再匯入 App。桌面「檔案 → 匯入圖檔」或 Cmd/Ctrl+O 可開啟匯入；PUML／JSON 下載會顯示系統存檔對話框。
+桌面版資料存在 Electron 的使用者資料目錄，與瀏覽器的 localStorage 分開；既有網頁圖表請先匯出 PUML／JSON，再匯入 App。桌面「檔案 → 匯入圖檔」或 Cmd/Ctrl+O 可開啟匯入；「檔案 → 匯出…」可存成 PNG／JPG／SVG／JSON。圖片與 PUML／JSON 下載都會顯示系統存檔對話框；取消不視為錯誤，寫入未完成時會另外顯示儲存失敗訊息。
 
 ```sh
 npm run test:desktop

@@ -48,3 +48,29 @@
 .view-selection-bar{margin:16px 0;padding:16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel)}.project-report .view-choice{display:flex;flex-direction:row;align-items:center;gap:12px;min-height:44px;margin:12px 0;font-weight:600}.project-report .view-choice input{width:16px;height:16px;flex:0 0 16px;accent-color:var(--accent)}.project-report .view-choice span{min-width:0;overflow-wrap:anywhere}.view-selection-bar .ai-actions button{max-width:100%;white-space:normal}
 .puml-file-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 16px;background:var(--panel);border-bottom:1px solid var(--line)}.puml-file-actions span{font-size:12px;overflow-wrap:anywhere}.save-comparison{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}.save-comparison label{min-width:0}.save-comparison textarea{width:100%}.provider-settings{border-bottom:1px solid var(--line);padding-bottom:8px}@media(max-width:850px){.save-comparison{grid-template-columns:minmax(0,1fr)}.save-comparison textarea{height:24dvh;min-height:140px}}
 .element-evidence{margin-top:16px}.element-evidence summary{cursor:pointer;min-height:44px;padding:8px 0}.element-evidence pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;background:var(--soft);padding:8px;border-radius:var(--radius)}.element-evidence strong{font-size:12px;overflow-wrap:anywhere}
+
+/* Export menu, collapsible panels. Panel rules stay outside media queries — the ≤850px
+   .mobile-show mechanism is a separate axis and must keep working unchanged. */
+.topbar{position:relative;z-index:5}
+.export-menu{position:relative}
+.export-menu>summary{display:inline-flex;align-items:center;gap:8px;list-style:none;cursor:pointer;border:1px solid var(--line);border-radius:var(--radius);background:#fff;padding:8px 12px;font-size:12px}
+.export-menu>summary::-webkit-details-marker{display:none}
+.export-menu[open]>summary{background:var(--soft);color:var(--accent);border-color:#d8e2da}
+.export-options{position:absolute;right:0;top:calc(100% + 8px);z-index:30;display:flex;flex-direction:column;gap:4px;min-width:186px;padding:8px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px #152e3a1a}
+.export-options button{justify-content:flex-start;border:0;font-size:12px;white-space:nowrap}
+.export-options small{font-size:10px;color:var(--muted);padding:4px 6px 0;white-space:normal;line-height:1.5}
+.panel-toggles{display:flex;align-items:center;gap:2px;padding:3px;border:1px solid var(--line);border-radius:var(--radius)}
+.panel-toggles button{border:0;padding:6px;color:#6c7880;border-radius:5px}
+.panel-toggles button[aria-pressed=true]{background:var(--soft);color:var(--accent)}
+.chat-panel.collapsed,.inspector.collapsed{width:0;min-width:0;padding:0;border:0;overflow:hidden;visibility:hidden}
+.workspace.no-left{grid-template-columns:0 minmax(0,1fr) 264px}
+.workspace.no-right{grid-template-columns:292px minmax(0,1fr) 0}
+.workspace.no-left.no-right{grid-template-columns:0 minmax(0,1fr) 0}
+.chrome-peek{display:none;align-items:center;gap:12px;padding:6px 16px;background:var(--panel);border-bottom:1px solid var(--line);font-size:11px;color:var(--muted);flex-shrink:0}
+.chrome-peek>span:first-child{font-weight:600;color:var(--ink)}
+.chrome-peek button{margin-left:auto;border:0;font-size:11px;padding:5px 8px;color:var(--accent);background:var(--soft)}
+.canvas-panel.chrome-hidden>.chrome-peek{display:flex}
+.canvas-panel.chrome-hidden>.canvas-header,.canvas-panel.chrome-hidden>.diagram-selector,.canvas-panel.chrome-hidden>.level-bar,.canvas-panel.chrome-hidden>.diagram-summary,.canvas-panel.chrome-hidden>.generated-flow-controls,.canvas-panel.chrome-hidden>.puml-file-actions,.canvas-panel.chrome-hidden>.flow-navigator{display:none}
+@media(min-width:1600px){.workspace.no-left{grid-template-columns:0 minmax(0,1fr) 288px}.workspace.no-right{grid-template-columns:320px minmax(0,1fr) 0}.workspace.no-left.no-right{grid-template-columns:0 minmax(0,1fr) 0}}
+@media(max-width:1100px){.workspace.no-left{grid-template-columns:0 minmax(0,1fr) 224px}.workspace.no-right{grid-template-columns:248px minmax(0,1fr) 0}.workspace.no-left.no-right{grid-template-columns:0 minmax(0,1fr) 0}}
+@media(max-width:850px){.panel-toggles{display:none}.chat-panel.collapsed,.inspector.collapsed{width:auto;visibility:visible;overflow:visible}.export-menu>summary{min-height:44px}.export-menu>summary span{display:none}.export-options button{min-height:44px}.chrome-peek{padding:6px 12px}.chrome-peek button{min-height:36px}}

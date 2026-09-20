@@ -4,6 +4,7 @@ import { Braces, Download, Upload, X, Check, ArrowRight } from 'lucide-react';
 import { GraphPreview } from './graph-preview';
 import { importPuml, type PumlResult } from '../../lib/puml';
 import { diagramTypes, type DiagramType } from '../../lib/diagram-types';
+import { downloadText } from './canvas-export';
 
 export function PumlEditor({initialSource,onClose,onApply}:{initialSource:string;onClose:()=>void;onApply:(result:PumlResult)=>void}){
  const dialog=useRef<HTMLDialogElement>(null),file=useRef<HTMLInputElement>(null);
@@ -12,7 +13,7 @@ export function PumlEditor({initialSource,onClose,onApply}:{initialSource:string
  useEffect(()=>{dialog.current?.showModal();},[]);
  function close(){if(source!==initialSource&&!window.confirm('原始碼尚未套用到畫布，確定捨棄這次編輯？'))return;onClose();}
  function change(text:string){setSource(text);setResult(null);setFileError('');}
- function download(){const url=URL.createObjectURL(new Blob([source],{type:'text/plain;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='model-graph.puml';a.click();URL.revokeObjectURL(url);}
+ function download(){downloadText(source,'model-graph.puml','text/plain;charset=utf-8');}
  return <dialog ref={dialog} className="puml-dialog" onCancel={e=>{e.preventDefault();close();}} aria-labelledby="puml-title">
   <header className="puml-heading"><div><Braces size={20}/><h2 id="puml-title">PlantUML 原始碼</h2><span className="small-label">.PUML</span></div><button aria-label="關閉 PUML 編輯器" onClick={close}><X size={18}/></button></header>
   <div className="puml-actions"><button onClick={()=>file.current?.click()}><Upload size={16}/> 開啟 PUML</button><button onClick={download} disabled={!source.trim()}><Download size={16}/> 下載原始碼</button><label>匯入類型<select value={type} onChange={e=>{setType(e.target.value as DiagramType|'auto');setResult(null);}}><option value="auto">自動辨識</option>{Object.entries(diagramTypes).map(([id,t])=><option value={id} key={id}>{t.name}</option>)}</select></label></div>
