@@ -2,9 +2,10 @@
 import {useState} from 'react';
 import type {ProjectReport,ProjectView} from '../../lib/desktop-ai';
 import {diagramTypes} from '../../lib/diagram-types';
+import {downloadText} from './canvas-export';
 const labels:Record<string,string>={interrupted:'已中斷',running:'整理候選中',reading:'追查來源',synthesizing:'整理說明',pending:'等待處理',described:'已整理說明',proposed:'尚未產圖',queued:'本批排隊中',generating:'產圖中',ready:'已完成',complete:'完成',partial:'部分完成',failed:'未完成',cancelled:'已取消',awaiting_selection:'等待選圖'};
 const itemLabels:Record<string,string>={structure:'元素與依賴',scenario:'情境步驟',pipeline:'資料處理與流向',lifecycle:'狀態與轉換',legacy:'舊版情境分析'};
-function download(name:string,text:string,type:string){const url=URL.createObjectURL(new Blob([text],{type}));const a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url);}
+const download=(name:string,text:string,type:string)=>downloadText(text,name,type);
 export function ProjectReportView({report,onPreview,onRefine,onGenerate,canGenerate,disabled}:{report:ProjectReport;onPreview:(source:string)=>void;onRefine:(view:ProjectView)=>void;onGenerate:(ids:string[])=>void;canGenerate:boolean;disabled?:boolean}){
  const [filter,setFilter]=useState(''),[selected,setSelected]=useState<string[]>([]);
  const all=report.themes.flatMap(t=>t.views),ready=all.filter(v=>v.status==='ready').length;

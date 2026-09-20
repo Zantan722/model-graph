@@ -23,9 +23,20 @@ protocol.registerSchemesAsPrivileged([
 let window;
 const cancelAI = require('./ai-ipc.cjs').installAI(() => window);
 app.on('before-quit', cancelAI);
-let downloadResult;
-let finishDownload;
-if (smoke) downloadResult = new Promise(resolve => { finishDownload = resolve; });
+const downloads = new Map();
+const downloadWaiters = new Map();
+function recordDownload(name, value) {
+  downloads.set(name, value);
+  const waiter = downloadWaiters.get(name);
+  if (waiter) { downloadWaiters.delete(name); waiter(value); }
+}
+function awaitDownload(name, ms = 8000) {
+  if (downloads.has(name)) return Promise.resolve(downloads.get(name));
+  return new Promise(resolve => {
+    downloadWaiters.set(name, resolve);
+    setTimeout(() => { downloadWaiters.delete(name); resolve(downloads.get(name) || null); }, ms);
+  });
+}
 function createWindow() {
   window = new BrowserWindow({
     title: 'Model Graph', width: 1440, height: 940, minWidth: 360, minHeight: 600,
@@ -168,9 +179,52 @@ async function runSmoke(win) {
       await settle();
       const flowSaved=await win.webContents.executeJavaScript(`JSON.parse(localStorage.getItem('modelgraph-flow-library-v1')).flows[0].title==='Smoke flow' && document.querySelectorAll('.edge.selected').length===1`);
       if(!storyMode||!flowSaved)throw new Error('Story mode or flow library/navigation failed');
-      const saved = await downloadResult;
-      if (!saved) throw new Error('PUML download failed');
-      console.log('Desktop smoke test passed:', JSON.stringify({ ...result, pumlDownload: true, redoPreserved, aiBridge: true, unifiedComposer, providerSaved, storyMode, flowSaved }));
+      const saved = await awaitDownload('model-graph.puml');
+      if (!saved || saved.state !== 'completed' || !saved.buffer.toString('utf8').includes('@startuml')) throw new Error('PUML download failed');
+      // Image export: a node is still selected here, so this also covers clearing the highlight first.
+      const clickExport = label => win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.export-options button')).find(b=>b.textContent.includes('${label}')).click()`);
+      await clickExport('SVG'); await clickExport('PNG'); await clickExport('JPG');
+      const [svgFile, pngFile, jpgFile] = await Promise.all([awaitDownload('model-graph-architecture.svg'), awaitDownload('model-graph-architecture.png'), awaitDownload('model-graph-architecture.jpg')]);
+      for (const [name, file] of [['svg', svgFile], ['png', pngFile], ['jpg', jpgFile]]) {
+        if (!file || file.state !== 'completed' || !file.buffer.length) throw new Error(`Image export failed: ${name}`);
+      }
+      const svgText = svgFile.buffer.toString('utf8');
+      if (!svgText.includes('<svg') || !svgText.includes('viewBox=') || !svgText.includes('data-node-id')) throw new Error('Exported SVG is missing the graph');
+      if (!svgText.includes('fill:') || !svgText.includes('font-family:')) throw new Error('Exported SVG lost its stylesheet');
+      if (svgText.includes('class="port"') || svgText.includes('wire-preview')) throw new Error('Exported SVG kept editor-only handles');
+      // #4c7c60 is the selected/focus-visible node stroke, #749887 the hover stroke. A node is
+      // focused and hovered at this point, so this guards the detached-stage style resolution.
+      if (svgText.includes('rgb(76, 124, 96)') || svgText.includes('rgb(116, 152, 135)')) throw new Error('Exported SVG baked in a selection, focus or hover highlight');
+      if (!pngFile.buffer.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]))) throw new Error('PNG export is not a PNG');
+      if (!jpgFile.buffer.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) throw new Error('JPG export is not a JPEG');
+      const imageExport = { svg: svgFile.buffer.length, png: pngFile.buffer.length, jpg: jpgFile.buffer.length };
+      // Collapsing panels must widen the canvas and survive a reload.
+      const canvasWidth = () => win.webContents.executeJavaScript(`document.querySelector('.graph-canvas').getBoundingClientRect().width`);
+      const openWidth = await canvasWidth();
+      await win.webContents.executeJavaScript(`document.querySelector('[aria-label="專注模式"]').click()`); await settle(); await settle();
+      const focused = await win.webContents.executeJavaScript(`(()=>({cls:document.querySelector('.workspace').className,chrome:document.querySelector('.canvas-panel').className.includes('chrome-hidden'),peek:getComputedStyle(document.querySelector('.chrome-peek')).display,stored:localStorage.getItem('modelgraph-panels-v1'),type:Boolean(document.querySelector('#diagram-type')),flow:Boolean(document.querySelector('[aria-label="Flow 關係"]'))}))()`);
+      const focusWidth = await canvasWidth();
+      if (!focused.cls.includes('no-left') || !focused.cls.includes('no-right') || !focused.chrome) throw new Error('Focus mode did not collapse the panels');
+      if (focused.peek === 'none') throw new Error('Collapsed chrome left no way back');
+      if (!focused.type || !focused.flow) throw new Error('Collapsed chrome unmounted controls instead of hiding them');
+      if (JSON.parse(focused.stored).left !== false) throw new Error('Panel state was not persisted');
+      if (!(focusWidth > openWidth + 200)) throw new Error(`Focus mode did not widen the canvas: ${openWidth} -> ${focusWidth}`);
+      await win.webContents.executeJavaScript(`document.querySelector('[aria-label="專注模式"]').click()`); await settle(); await settle();
+      const restoredWidth = await canvasWidth();
+      if (Math.abs(restoredWidth - openWidth) > 1) throw new Error(`Focus mode did not restore the layout: ${openWidth} -> ${restoredWidth}`);
+      const panelCollapse = { openWidth: Math.round(openWidth), focusWidth: Math.round(focusWidth) };
+      // The 檔案/檢視 menu items drive the renderer through aria-labels; verify that wiring end to end.
+      const menu = Menu.getApplicationMenu();
+      const item = id => { const found = menu.getMenuItemById(id); if (!found) throw new Error(`Menu item missing: ${id}`); return found; };
+      item('focus-mode').click(); await settle(); await settle();
+      if (!(await win.webContents.executeJavaScript(`document.querySelector('.workspace').className.includes('no-left')`))) throw new Error('檢視 → 專注模式 menu item did not reach the renderer');
+      item('focus-mode').click(); await settle(); await settle();
+      if (await win.webContents.executeJavaScript(`document.querySelector('.workspace').className.includes('no-left')`)) throw new Error('檢視 → 專注模式 menu item did not toggle back');
+      item('export-jpg').click();
+      const menuExport = await awaitDownload('model-graph-architecture.jpg');
+      if (!menuExport || menuExport.state !== 'completed') throw new Error('檔案 → 匯出 JPG menu item did not produce a file');
+      const menuWiring = { focusMode: true, exportJpg: menuExport.buffer.length };
+      console.log('Desktop smoke test passed:', JSON.stringify({ ...result, pumlDownload: true, redoPreserved, aiBridge: true, unifiedComposer, providerSaved, storyMode, flowSaved, imageExport, panelCollapse, menuWiring }));
       clearTimeout(timeout); app.exit(0);
     } catch (error) { console.error(error); clearTimeout(timeout); app.exit(1); }
   });
@@ -190,20 +244,37 @@ else {
     session.defaultSession.setPermissionCheckHandler(() => false);
     session.defaultSession.on('will-download', (_event, item) => {
       if (smoke) {
-        const destination = path.join(app.getPath('userData'), 'test-export.puml');
+        const name = item.getFilename();
+        const destination = path.join(app.getPath('userData'), `smoke-${name}`);
         item.setSavePath(destination);
         item.once('done', (_event, state) => {
           const { readFileSync } = require('node:fs');
-          try { finishDownload(state === 'completed' && readFileSync(destination, 'utf8').includes('@startuml')); }
-          catch { finishDownload(false); }
+          try { recordDownload(name, { state, buffer: readFileSync(destination) }); }
+          catch { recordDownload(name, { state: 'failed', buffer: Buffer.alloc(0) }); }
         });
-      } else item.setSaveDialogOptions({ title: '儲存圖檔', defaultPath: item.getFilename() });
+      } else {
+        item.setSaveDialogOptions({ title: '儲存圖檔', defaultPath: item.getFilename() });
+        // Without this the renderer keeps claiming the export succeeded when nothing reached disk.
+        item.once('done', (_doneEvent, state) => {
+          if (state === 'completed' || state === 'cancelled') return;
+          dialog.showErrorBox('儲存失敗', `${item.getFilename()} 沒有寫入完成（${state}）。請確認磁碟空間與資料夾權限後再試一次。`);
+        });
+      }
     });
+    const clickControl = label => window?.webContents.executeJavaScript(`document.querySelector('[aria-label=${JSON.stringify(label)}]')?.click()`);
     const template = [
       ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
-      { label: '檔案', submenu: [{ label: '匯入圖檔…', accelerator: 'CmdOrCtrl+O', click: () => window?.webContents.executeJavaScript(`document.querySelector('[aria-label="匯入 JSON 或 PUML"]')?.click()`) }, { type: 'separator' }, { role: process.platform === 'darwin' ? 'close' : 'quit' }] },
+      { label: '檔案', submenu: [
+        { label: '匯入圖檔…', accelerator: 'CmdOrCtrl+O', click: () => clickControl('匯入 JSON 或 PUML') },
+        { type: 'separator' },
+        { id: 'export-png', label: '匯出 PNG 圖片…', accelerator: 'CmdOrCtrl+S', click: () => clickControl('匯出 PNG') },
+        { id: 'export-jpg', label: '匯出 JPG 圖片…', click: () => clickControl('匯出 JPG') },
+        { id: 'export-svg', label: '匯出 SVG 向量圖…', accelerator: 'CmdOrCtrl+Shift+S', click: () => clickControl('匯出 SVG') },
+        { id: 'export-json', label: '匯出 JSON 圖檔…', click: () => clickControl('匯出 JSON') },
+        { type: 'separator' },
+        { role: process.platform === 'darwin' ? 'close' : 'quit' }] },
       { role: 'editMenu' },
-      { label: '檢視', submenu: [{ role: 'reload' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'togglefullscreen' }, ...(!app.isPackaged ? [{ role: 'toggleDevTools' }] : [])] },
+      { label: '檢視', submenu: [{ id: 'focus-mode', label: '專注模式', accelerator: 'CmdOrCtrl+\\', click: () => clickControl('專注模式') }, { type: 'separator' }, { role: 'reload' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'togglefullscreen' }, ...(!app.isPackaged ? [{ role: 'toggleDevTools' }] : [])] },
       { role: 'windowMenu' },
     ];
     Menu.setApplicationMenu(Menu.buildFromTemplate(template));
