@@ -137,7 +137,11 @@ export function importPuml(source: string, preferred: DiagramType|'auto'='auto')
    const args=splitArgs(macro[2]);if(!args){fail(at,'C4 巨集參數引號不完整');continue;}
    const fn=macro[1].toLowerCase();
    if(fn.startsWith('rel')){if(args.length<3||args.length>4){fail(at,'Rel 目前支援起點、終點、說明與可選技術');continue;}const a=names.get(bare(args[0])),b=names.get(bare(args[1]));if(!a||!b){fail(at,'Rel 的起點或終點尚未宣告');continue;}addEdge(a,b,bare(args[2])+(args[3]?` [${bare(args[3])}]`:''),false,true);}
-   else {const detailed=/^(container|component)/.test(fn);if(args.length<2||args.length>(detailed?4:3)||args.some(a=>/^\$/.test(a))){fail(at,'目前支援 C4 的位置參數：alias、名稱、技術、描述');continue;}const kind:NodeKind=fn.includes('db')?'database':fn.startsWith('person')?'person':fn.startsWith('system')?'system':fn.startsWith('component')?'component':'container';const n=ensure(args[0],kind,args[1]);n.name=bare(args[1]);if(detailed)n.technology=bare(args[2]||'');n.description=bare(args[detailed?3:2]||'');if(fn.endsWith('_ext'))warn(at,'外部元素會保留內容，但目前畫布不呈現 C4 外部樣式');}
+   else {const detailed=/^(container|component)/.test(fn);
+    // Person/System have no technology slot: C4-PlantUML's 4th positional there is $sprite, so saying
+    // otherwise sends people back to the same mistake.
+    if(args.some(a=>/^\$/.test(a))){fail(at,'尚未支援具名參數與變數（$sprite、$tags、$link 等），請只用位置參數');continue;}
+    if(args.length<2||args.length>(detailed?4:3)){fail(at,detailed?`${macro[1]} 的位置參數為 alias、名稱、技術、描述（最多 4 個）`:`${macro[1]} 的位置參數只有 alias、名稱、描述（最多 3 個）；第 4 個位置在 C4-PlantUML 是 $sprite，需要技術欄位請改用 Container${fn.endsWith('_ext')?'_Ext':''}`);continue;}const kind:NodeKind=fn.includes('db')?'database':fn.startsWith('person')?'person':fn.startsWith('system')?'system':fn.startsWith('component')?'component':'container';const n=ensure(args[0],kind,args[1]);n.name=bare(args[1]);if(detailed)n.technology=bare(args[2]||'');n.description=bare(args[detailed?3:2]||'');if(fn.endsWith('_ext'))warn(at,'外部元素會保留內容，但目前畫布不呈現 C4 外部樣式');}
    continue;
   }
   const declaration=line.match(new RegExp(`^(participant|actor|boundary|control|entity|database|collections|queue|component|rectangle|node|cloud|interface|class|state)\\s+(${token})(?:\\s+as\\s+(${token}))?(?:\\s+<<([^>]+)>>)?$`,'iu'));

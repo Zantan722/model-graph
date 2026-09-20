@@ -49,3 +49,20 @@ assert.deepEqual(nested.errors,[]);assert.equal(nested.graph.nodes.length,1,'nes
 for(const source of ['@startuml\n!include <C4/C4_Container>\nSystem_Boundary(b, "B") {\nPerson(u, "U")\n@enduml','@startuml\n!include <C4/C4_Container>\nPerson(u, "U")\n}\n@enduml'])
  assert.ok(importPuml(source).errors.length>0,`unbalanced boundary braces should fail: ${source}`);
 console.log('Boundary checks passed: transparent grouping, four macro names, nesting, and unbalanced braces.');
+
+// The rejection must not name a slot the macro does not have, or it sends people back to the same mistake.
+const tooMany=importPuml('@startuml\n!include <C4/C4_Container>\nSystem_Ext(trino, "Trino", "SQL Engine", "preview")\n@enduml');
+assert.equal(tooMany.errors.length,1);
+assert.ok(tooMany.errors[0].message.startsWith('System_Ext'),'message should name the macro');
+assert.ok(tooMany.errors[0].message.includes('技術欄位請改用'),'message should point at the macro that has a technology slot');
+assert.ok(!/位置參數為 alias、名稱、技術/.test(tooMany.errors[0].message),'System_Ext has no technology slot');
+assert.ok(tooMany.errors[0].message.includes('Container_Ext'),'_ext macros should be redirected to Container_Ext');
+assert.ok(importPuml('@startuml\n!include <C4/C4_Container>\nPerson(u, "U", "d", "x")\n@enduml').errors[0].message.includes('Container'),'Person should be redirected to Container');
+assert.ok(/技術/.test(importPuml('@startuml\n!include <C4/C4_Container>\nContainer(a, "A", "T", "D", "e")\n@enduml').errors[0].message),'Container does have a technology slot');
+assert.ok(importPuml('@startuml\n!include <C4/C4_Container>\nContainer(a, "A", "T", $sprite="x")\n@enduml').errors[0].message.includes('具名參數'),'named parameters need their own message');
+// The three-argument form stays valid and keeps the description in the right field.
+const threeArg=importPuml('@startuml\n!include <C4/C4_Container>\nSystem_Ext(trino, "Trino", "SQL Engine")\n@enduml');
+assert.deepEqual(threeArg.errors,[]);
+assert.equal(threeArg.graph.nodes[0].description,'SQL Engine');
+assert.equal(threeArg.graph.nodes[0].technology,'');
+console.log('C4 argument-count messages passed: per-macro slots, redirect target, and named parameters.');
