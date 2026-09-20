@@ -165,3 +165,30 @@ function splitArgs(input:string):string[]|null {
  for(const c of input){if(c==='"'&&!escaped)inside=!inside;if(c===','&&!inside){args.push(part.trim());part='';}else part+=c;if(c==='\\'&&!escaped)escaped=true;else escaped=false;}
  if(inside)return null;args.push(part.trim());return args;
 }
+
+const MACRO_CALL=/^([\p{L}_][\p{L}\p{N}_]*)\((.*)\)(\s*\{)?$/u;
+const RELATION=/^(?:Rel(?:_[LRUD])?\(|.*(?:-{1,2}\[?[#\w]*\]?-{0,2}>{1,2}|<-{1,2}|\.{2,}>))/;
+const isMeta=(line:string)=>/^' @modelgraph/.test(line);
+
+/** Layout only: never reorders or rewrites declarations, so a formatted file parses to the same graph. */
+export function formatPuml(source: string): string {
+ const raw=source.replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n').split('\n').map(l=>l.trim());
+ const out:string[]=[];let depth=0,seenRelation=false,blank=false;
+ const push=(line:string)=>out.push('  '.repeat(Math.max(0,depth))+line);
+ // A @modelgraph comment carries the ids and coordinates of the line below it; a blank must go above the pair.
+ const separate=()=>{let at=out.length;while(at>0&&isMeta(out[at-1].trim()))at--;if(at>0&&out[at-1]!=='')out.splice(at,0,'');};
+ for(const line of raw){
+  if(!line){blank=out.length>0;continue;}
+  const macro=line.match(MACRO_CALL);
+  const body=macro?`${macro[1]}(${(splitArgs(macro[2])??[macro[2]]).join(', ')})${macro[3]?' {':''}`:line;
+  if(/^\}/.test(body))depth--;
+  const relation=RELATION.test(body)&&!isMeta(body)&&!/^\}/.test(body);
+  // Canonical export separates declarations from relations with one blank line; mirror it.
+  if(relation&&!seenRelation&&out.length){separate();blank=false;}
+  else if(blank)separate();
+  blank=false;seenRelation||=relation;
+  push(body);
+  if(/\{$/.test(body))depth++;
+ }
+ return out.join('\n').replace(/\n{3,}/g,'\n\n').replace(/\s+$/,'')+'\n';
+}

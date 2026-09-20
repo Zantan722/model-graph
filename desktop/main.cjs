@@ -156,6 +156,12 @@ async function runSmoke(win) {
         }; poll();
       })`);
       if (result.diagramTypes !== 6 || !result.nodeIsolated || !result.secure) throw new Error(JSON.stringify(result));
+      // Canvas PUML is already canonical, so 格式化 must leave it byte for byte identical.
+      const beforeFormat = await win.webContents.executeJavaScript(`document.querySelector('#puml-source').value`);
+      await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.puml-actions button')).find(b => b.textContent.includes('格式化')).click()`);
+      await new Promise(resolve => setTimeout(resolve, 120));
+      const afterFormat = await win.webContents.executeJavaScript(`document.querySelector('#puml-source').value`);
+      if (afterFormat !== beforeFormat) throw new Error('格式化 changed canonical canvas PUML');
       await win.webContents.executeJavaScript(`document.querySelector('[aria-label="關閉 PUML 編輯器"]').click()`);
       const position = await win.webContents.executeJavaScript(`(() => { const n=document.querySelector('[data-node-id]'); const r=n.getBoundingClientRect(); return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}; })()`);
       const move=(type,x,y)=>win.webContents.sendInputEvent({type,x,y,button:'left',clickCount:1});
@@ -224,7 +230,7 @@ async function runSmoke(win) {
       const menuExport = await awaitDownload('model-graph-architecture.jpg');
       if (!menuExport || menuExport.state !== 'completed') throw new Error('檔案 → 匯出 JPG menu item did not produce a file');
       const menuWiring = { focusMode: true, exportJpg: menuExport.buffer.length };
-      console.log('Desktop smoke test passed:', JSON.stringify({ ...result, pumlDownload: true, redoPreserved, aiBridge: true, unifiedComposer, providerSaved, storyMode, flowSaved, imageExport, panelCollapse, menuWiring }));
+      console.log('Desktop smoke test passed:', JSON.stringify({ ...result, pumlDownload: true, redoPreserved, aiBridge: true, unifiedComposer, providerSaved, storyMode, flowSaved, pumlFormat: true, imageExport, panelCollapse, menuWiring }));
       clearTimeout(timeout); app.exit(0);
     } catch (error) { console.error(error); clearTimeout(timeout); app.exit(1); }
   });

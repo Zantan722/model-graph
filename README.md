@@ -37,6 +37,7 @@ npm run dev -- --host 127.0.0.1
 ```sh
 node tests/graph.test.mjs
 node tests/svg-export.test.mjs
+node tests/puml-format.test.mjs
 npx tsc --noEmit
 npm run build
 ```
