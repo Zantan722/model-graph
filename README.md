@@ -17,6 +17,7 @@ npm run dev -- --host 127.0.0.1
 - 點選節點或連線，在屬性面板編輯。節點取得鍵盤焦點後，可用方向鍵移動。
 - 選節點後切換「註解」，新增及解決討論。
 - 使用移動畫布、縮放、符合畫面、復原及重做。
+- 「自動排列」依關係方向分層重排節點（桌面版亦在「檢視」選單或 Cmd/Ctrl+Shift+L）。同一份圖永遠得到同一種排列，可用復原還原。循序圖改為調整參與者左右順序以縮短訊息。
 - 頂部「匯出」可存成 PNG、JPG、SVG 或 JSON，桌面版另有「檔案 → 匯出…」與 Cmd/Ctrl+S（PNG）、Cmd/Ctrl+Shift+S（SVG）。圖片匯出整張圖，不受目前縮放與捲動位置影響；PNG／JPG 以 2 倍解析度輸出，JPG 為白底，SVG 保持透明背景。連線圓點與選取、聚焦、滑鼠停留的高亮都不會被匯出。
 - 頂部面板按鈕可分別收合上方工具列、左側助理與右側屬性；「專注模式」（桌面版亦在「檢視」選單）或 Cmd/Ctrl + \ 一次全收，再按一次還原成先前的組合。收合狀態保存在本機，畫布會自動重新符合畫面。
 - 從「圖表類型」切換 Architecture、Workflow、Sequence、Data Flow、Lifecycle 與 C4 Model，每種圖保存獨立畫布。
@@ -38,6 +39,7 @@ npm run dev -- --host 127.0.0.1
 node tests/graph.test.mjs
 node tests/svg-export.test.mjs
 node tests/puml-format.test.mjs
+node tests/layout.test.mjs
 npx tsc --noEmit
 npm run build
 ```

@@ -219,6 +219,15 @@ async function runSmoke(win) {
       const restoredWidth = await canvasWidth();
       if (Math.abs(restoredWidth - openWidth) > 1) throw new Error(`Focus mode did not restore the layout: ${openWidth} -> ${restoredWidth}`);
       const panelCollapse = { openWidth: Math.round(openWidth), focusWidth: Math.round(focusWidth) };
+      // Auto arrange must move nodes, stay undoable, and be reachable from the 檢視 menu.
+      const positions = () => win.webContents.executeJavaScript(`JSON.stringify(Array.from(document.querySelectorAll('[data-node-id]')).map(n=>n.getAttribute('transform')))`);
+      const beforeArrange = await positions();
+      await win.webContents.executeJavaScript(`document.querySelector('[aria-label="自動排列"]').click()`); await settle(); await settle();
+      const afterArrange = await positions();
+      if (afterArrange === beforeArrange) throw new Error('自動排列 did not move any node');
+      await win.webContents.executeJavaScript(`document.querySelector('[aria-label="復原"]').click()`); await settle(); await settle();
+      if (await positions() !== beforeArrange) throw new Error('自動排列 was not undoable');
+      const autoArrange = { moved: true, undone: true };
       // The 檔案/檢視 menu items drive the renderer through aria-labels; verify that wiring end to end.
       const menu = Menu.getApplicationMenu();
       const item = id => { const found = menu.getMenuItemById(id); if (!found) throw new Error(`Menu item missing: ${id}`); return found; };
@@ -226,11 +235,14 @@ async function runSmoke(win) {
       if (!(await win.webContents.executeJavaScript(`document.querySelector('.workspace').className.includes('no-left')`))) throw new Error('檢視 → 專注模式 menu item did not reach the renderer');
       item('focus-mode').click(); await settle(); await settle();
       if (await win.webContents.executeJavaScript(`document.querySelector('.workspace').className.includes('no-left')`)) throw new Error('檢視 → 專注模式 menu item did not toggle back');
+      const beforeMenuArrange = await positions();
+      item('auto-arrange').click(); await settle(); await settle();
+      if (await positions() === beforeMenuArrange) throw new Error('檢視 → 自動排列 menu item did not reach the renderer');
       item('export-jpg').click();
       const menuExport = await awaitDownload('model-graph-architecture.jpg');
       if (!menuExport || menuExport.state !== 'completed') throw new Error('檔案 → 匯出 JPG menu item did not produce a file');
-      const menuWiring = { focusMode: true, exportJpg: menuExport.buffer.length };
-      console.log('Desktop smoke test passed:', JSON.stringify({ ...result, pumlDownload: true, redoPreserved, aiBridge: true, unifiedComposer, providerSaved, storyMode, flowSaved, pumlFormat: true, imageExport, panelCollapse, menuWiring }));
+      const menuWiring = { focusMode: true, autoArrange: true, exportJpg: menuExport.buffer.length };
+      console.log('Desktop smoke test passed:', JSON.stringify({ ...result, pumlDownload: true, redoPreserved, aiBridge: true, unifiedComposer, providerSaved, storyMode, flowSaved, pumlFormat: true, autoArrange, imageExport, panelCollapse, menuWiring }));
       clearTimeout(timeout); app.exit(0);
     } catch (error) { console.error(error); clearTimeout(timeout); app.exit(1); }
   });
@@ -280,7 +292,7 @@ else {
         { type: 'separator' },
         { role: process.platform === 'darwin' ? 'close' : 'quit' }] },
       { role: 'editMenu' },
-      { label: '檢視', submenu: [{ id: 'focus-mode', label: '專注模式', accelerator: 'CmdOrCtrl+\\', click: () => clickControl('專注模式') }, { type: 'separator' }, { role: 'reload' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'togglefullscreen' }, ...(!app.isPackaged ? [{ role: 'toggleDevTools' }] : [])] },
+      { label: '檢視', submenu: [{ id: 'focus-mode', label: '專注模式', accelerator: 'CmdOrCtrl+\\', click: () => clickControl('專注模式') }, { id: 'auto-arrange', label: '自動排列', accelerator: 'CmdOrCtrl+Shift+L', click: () => clickControl('自動排列') }, { type: 'separator' }, { role: 'reload' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'togglefullscreen' }, ...(!app.isPackaged ? [{ role: 'toggleDevTools' }] : [])] },
       { role: 'windowMenu' },
     ];
     Menu.setApplicationMenu(Menu.buildFromTemplate(template));
